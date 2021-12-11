@@ -1,0 +1,547 @@
+---
+title: "Seurat scRNAseq analysis"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+## Load data, merge and normalize
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(Cairo)
+library(ggrepel)
+
+dlbc.d1 <- Read10X(data.dir="D:/Michal-Asia/raw/DLBCL1/")
+d1 <- CreateSeuratObject(counts = dlbc.d1, project = "D1", min.cells = 3, min.features = 200)
+d1@meta.data[['batch']] <- 1
+d1@meta.data[['sex']] <- 1
+
+dlbc.d2 <- Read10X(data.dir="D:/Michal-Asia/raw/DLBCL2/")
+d2 <- CreateSeuratObject(counts = dlbc.d2, project = "D2", min.cells = 3, min.features = 200)
+d2@meta.data[['batch']] <- 1
+d2@meta.data[['sex']] <- 0
+
+dlbc.d3 <- Read10X(data.dir="D:/Michal-Asia/raw/DLBCL3/")
+d3 <- CreateSeuratObject(counts = dlbc.d3, project = "D3", min.cells = 3, min.features = 200)
+d3@meta.data[['batch']] <- 2
+d3@meta.data[['sex']] <- 1
+
+dlbc.l1 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN1/")
+l1 <- CreateSeuratObject(counts = dlbc.l1, project = "L1", min.cells = 3, min.features = 200)
+l1@meta.data[['batch']] <- 1
+l1@meta.data[['sex']] <- 0
+
+dlbc.l2 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN2/")
+l2 <- CreateSeuratObject(counts = dlbc.l2, project = "L2", min.cells = 3, min.features = 200)
+l2@meta.data[['batch']] <- 2
+l2@meta.data[['sex']] <- 0
+
+dlbc.l3 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN3/")
+l3 <- CreateSeuratObject(counts = dlbc.l3, project = "L3", min.cells = 3, min.features = 200)
+l3@meta.data[['batch']] <- 2
+l3@meta.data[['sex']] <- 1
+
+dlbc.f1 <- Read10X(data.dir="D:/Michal-Asia/raw/FL1/")
+f1 <- CreateSeuratObject(counts = dlbc.f1, project = "F1", min.cells = 3, min.features = 200)
+f1@meta.data[['batch']] <- 1
+f1@meta.data[['sex']] <- 0
+
+dlbc.f2 <- Read10X(data.dir="D:/Michal-Asia/raw/FL2/")
+f2 <- CreateSeuratObject(counts = dlbc.f2, project = "F2", min.cells = 3, min.features = 200)
+f2@meta.data[['batch']] <- 1
+f2@meta.data[['sex']] <- 0
+
+dlbc.f3 <- Read10X(data.dir="D:/Michal-Asia/raw/FL3/")
+f3 <- CreateSeuratObject(counts = dlbc.f3, project = "F3", min.cells = 3, min.features = 200)
+f3@meta.data[['batch']] <- 1
+f3@meta.data[['sex']] <- 0
+
+dlbc.f4 <- Read10X(data.dir="D:/Michal-Asia/raw/FL4/")
+f4 <- CreateSeuratObject(counts = dlbc.f4, project = "F4", min.cells = 3, min.features = 200)
+f4@meta.data[['batch']] <- 2
+f4@meta.data[['sex']] <- 0
+
+# batch 1 normalization
+b1 <- merge(f1, y=f2, add.cell.ids = c("F1","F2"), project = "batch1")
+b1 <- merge(b1, y=f3, add.cell.ids = c( "" ,"F3"), project = "batch1")
+b1 <- merge(b1, y=d1, add.cell.ids = c( "" ,"D1"), project = "batch1")
+b1 <- merge(b1, y=d2, add.cell.ids = c( "" ,"D2"), project = "batch1")
+b1 <- merge(b1, y=l1, add.cell.ids = c( "" ,"L1"), project = "batch1")
+
+# batch 2 normalization
+b2 <- merge(d3, y=f4, add.cell.ids = c("D3","F4"), project = "batch2")
+b2 <- merge(b2, y=l2, add.cell.ids = c( "" ,"L2"), project = "batch2")
+b2 <- merge(b2, y=l3, add.cell.ids = c( "" ,"L3"), project = "batch2")
+
+# female DLBC merge
+fem_dlbc <- merge(d1, y=d3, add.cell.ids = c("D1","D3"), project = "female-DLBC")
+
+# female only
+fem_only <- merge(d1, y=d3, add.cell.ids = c("D1","D3"), project = "female-only")
+fem_only <- merge(fem_only, y=l3, add.cell.ids = c("","L3"), project = "female-only")
+
+# male only
+male_only <- merge(d2, y=l1, add.cell.ids = c("D2","L1"), project = "male-only")
+male_only <- merge(male_only, y=l2, add.cell.ids = c("","L2"), project = "male-only")
+
+dlbc <- merge(b1,y=b2,add.cell.ids = c("B1","B2"), project = "DLBC" )
+
+# QC
+dlbc[["percent.mt"]] <- PercentageFeatureSet(dlbc, pattern = "^MT-")
+dlbc <- subset(dlbc, subset = nFeature_RNA > 200 & percent.mt < 5)
+#dlbc <- NormalizeData(dlbc)
+
+a3g <- GetAssayData(object = dlbc, assay = "RNA", slot = "data")["APOBEC3G",]
+dlbc@meta.data['A3G_quartiles'] <- ntile(a3g,4)
+```
+```{r}
+library(dplyr)
+
+genbarcode <- function(st){ # from rownames in metadata only
+  tmp <- tail(strsplit(x=st,split="_")[[1]],1)
+  tmp <- head(strsplit(x=tmp,split="-")[[1]],1)
+  return(tmp)
+}
+
+findmarkers <- function(f, subset_ident){
+  #Idents(main) <- main@meta.data$orig.ident
+  #f <- subset(main,idents = subset_ident)
+  Idents(f) <- f@meta.data$A3G_quartiles
+  m <- FindMarkers(f,ident.1 = 4,logfc.threshold = 0.05)
+  m['Log10pval'] <- -log10(m$p_val_adj)
+  m['colorlab'] <- ifelse(m$avg_log2FC >= 1,"A", ifelse(m$avg_log2FC<=-1 , "B", "C"))
+  m['genelabels'] <- ifelse(m$avg_log2FC >= 0.5,row.names(m), ifelse(m$avg_log2FC<=-.5 , row.names(m),""))
+  m %>% distinct(row.names(m))
+  pl <- volcano_plot(m, subset_ident)
+  write.table(m,paste0("D:/Michal-Asia/",subset_ident,"_A3G-Q4-vs-others.txt"),quote=F,sep="\t", row.names = T)
+  return(m)
+}
+
+volcano_plot <- function(m, subset_ident){
+  pl <- ggplot(m, aes(x=avg_log2FC,y=Log10pval)) +
+    geom_point(aes(colour = colorlab)) +
+    geom_text_repel(aes(label = genelabels)) +
+    #xlim(-3,3) +
+    #ylim(0,60) +
+    scale_colour_manual(values = c("A"= "orange", "B"="blue",  "C"= "black")) +
+    theme(legend.position="none") +
+    ggtitle(subset_ident) +
+    xlab("Average log2(fold change)") + 
+    ylab( "- log10(pvalue)") +
+    ggrepel::geom_text_repel(aes(label = genelabels), max.overlaps = 2)
+  
+  CairoPNG(file=paste0("D:/Michal-Asia/",subset_ident,"_volcano.png"),
+           units="in",
+           width=6,
+           height=5,
+           pointsize=8,
+           dpi=300)
+  print(pl)
+  dev.off()
+  return(pl)
+}
+```
+
+
+```{r}
+# find markers
+# for each subset
+for (subvar in c("D1","D2","D3","L1","L2","L3","F1","F2","F3","F4")){
+  m <- findmarkers(dlbc,subvar)
+  nam <- paste("p",subvar,sep="")
+  assign(nam,m)
+}
+```
+```{r}
+Idents(dlbc) <- dlbc@meta.data$orig.ident
+f <- subset(dlbc,idents = c("F1","F2","F3","F4"))
+Idents(f) <- f@meta.data$A3G_quartiles
+m <- FindMarkers(f,ident.1 = 4)
+m['Log10pval'] <- -log10(m$p_val_adj)
+m['colorlab'] <- ifelse(m$avg_log2FC >= 1,"A", ifelse(m$avg_log2FC<=-1 , "B", "C"))
+m['genelabels'] <- ifelse(m$avg_log2FC >= 1,row.names(m), ifelse(m$avg_log2FC<=-1 , row.names(m),""))
+write.table(m,"D:/Michal-Asia/F-all_A3G-Q4-vs-others.txt",quote=F,sep="\t", row.names = F)
+pl <- volcano_plot(m,"F-all")
+
+```
+
+
+```{r}
+library(grid)
+library(gridExtra)
+
+histplot <- function(obj, gene){
+  adata <- GetAssayData(obj,slot="counts",assay="RNA")[gene,]
+  pl <- ggplot(as.data.frame(adata)) +
+    geom_histogram(aes(x = adata), stat = "bin", bins = 10, binwidth=0.5) +
+    #xlim(0, xlim_in) +
+    #ylim(0,ylim_in) +
+    xlab("scRNA-seq counts") +
+    ylab(gene)
+  return(pl)
+}
+
+fl <- merge(x=f1,y=f2,add.cell.ids=c("F1","F2"),project="FL")
+fl <- merge(x=fl,y=f3,add.cell.ids=c( "" ,"F3"),project="FL")
+fl <- merge(x=fl,y=f4,add.cell.ids=c( "" ,"F4"),project="FL")
+
+d1 <- NormalizeData(d1,scale.factor = 10000)
+d2 <- NormalizeData(d2,scale.factor = 10000)
+d3 <- NormalizeData(d3,scale.factor = 10000)
+fl <- NormalizeData(fl,scale.factor = 10000)
+l1 <- NormalizeData(l1,scale.factor = 10000)
+l2 <- NormalizeData(l2,scale.factor = 10000)
+l3 <- NormalizeData(l3,scale.factor = 10000)
+
+p4d1 <- histplot(d1,"MS4A1")
+p4d2 <- histplot(d2,"MS4A1")
+p4d3 <- histplot(d3,"MS4A1")
+p4f  <- histplot(fl,"MS4A1")
+p4l1 <- histplot(l1,"MS4A1")
+p4l2 <- histplot(l2,"MS4A1")
+p4l3 <- histplot(l3,"MS4A1")
+
+p2d1 <- histplot(d1,"PAX5")
+p2d2 <- histplot(d2,"PAX5")
+p2d3 <- histplot(d3,"PAX5")
+p2f  <- histplot(fl,"PAX5")
+p2l1 <- histplot(l1,"PAX5")
+p2l2 <- histplot(l2,"PAX5")
+p2l3 <- histplot(l3,"PAX5")
+
+p3d1 <- histplot(d1,"CD19")
+p3d2 <- histplot(d2,"CD19")
+p3d3 <- histplot(d3,"CD19")
+p3f  <- histplot(fl,"CD19")
+p3l1 <- histplot(l1,"CD19")
+p3l2 <- histplot(l2,"CD19")
+p3l3 <- histplot(l3,"CD19")
+
+
+
+CairoPNG(file="D:/Michal-Asia/Bcell-markers_histplot2.png",
+         units="in",
+         width=15,
+         height=6.5,
+         pointsize=4,
+         dpi=500)
+
+grid.arrange( arrangeGrob(p2d1,p3d1,p4d1,top=textGrob("DLBCL1", gp=gpar(fontsize=15,font=8))), 
+              arrangeGrob(p2d2,p3d2,p4d2,top=textGrob("DLBCL2", gp=gpar(fontsize=15,font=8))),
+              arrangeGrob(p2d3,p3d3,p4d3,top=textGrob("DLBCL3", gp=gpar(fontsize=15,font=8))),
+              arrangeGrob(p2f, p3f, p4f ,top=textGrob("FL"    , gp=gpar(fontsize=15,font=8))),
+              arrangeGrob(p2l1,p3l1,p4l1,top=textGrob("L1"    , gp=gpar(fontsize=15,font=8))),
+              arrangeGrob(p2l2,p3l2,p4l2,top=textGrob("L2"    , gp=gpar(fontsize=15,font=8))),
+              arrangeGrob(p2l3,p3l3,p4l3,top=textGrob("L3"    , gp=gpar(fontsize=15,font=8))),
+              ncol=7)
+dev.off()
+```
+
+
+```{r}
+p1 <- ggplot() + theme_void()
+CairoPNG(file="D:/Michal-Asia/histplots.png",
+         units="in",
+         width=10,
+         height=8,
+         pointsize=4,
+         dpi=500)
+
+grid.arrange( pD1,pD2,pD3,p1,pL1,pL2,pL3,p1,pF1,pF2,pF3,pF4,ncol=4,nrow=3)
+
+dev.off()
+```
+
+```{r}
+## Return the IDs for the gene symbols in the DE results
+library(org.Hs.eg.db)
+library(DOSE)
+library(pathview)
+library(clusterProfiler)
+library(AnnotationHub)
+library(ensembldb)
+library(tidyverse)
+library(annotables)
+```
+
+
+```{r}
+## immune genes
+# immgenes <- as.vector(scan("D:/CRP-Proposal_Feb2021/nano_imgenes_all.txt",what=character(),sep="\n"))
+
+library(ggnewscale)
+
+DEGsPlot <- function(m, subvar){
+  m <- as.data.frame(m)
+  idx <- grch37$symbol %in% m$gene
+  ids <- grch37[idx, ]
+  res_ids <- inner_join(m, ids, by=c("gene"="symbol"))
+  print(length(res_ids))
+  allOE_genes <- as.character(grch37$ensgene)
+  sigOE <- dplyr::filter(res_ids, p_val < 0.05, abs(avg_log2FC) > 0.2)
+  sigOE_genes <- as.character(sigOE$ensgene)
+  print(length(sigOE_genes))
+  ## Run GO enrichment analysis 
+  ego <- enrichGO(gene = sigOE_genes, 
+                universe = allOE_genes,
+                keyType = "ENSEMBL",
+                OrgDb = org.Hs.eg.db, 
+                ont = "BP", 
+                pAdjustMethod = "BH", 
+                qvalueCutoff = 0.05,
+                readable = TRUE)
+  ## Output results from GO analysis to a table
+  cluster_summary <- data.frame(ego)
+  print(head(cluster_summary))
+  write.csv(cluster_summary, paste0("D:/Michal-Asia/",subvar,"_cluster-summary.csv"))
+  
+  ## To color genes by log2 fold changes, we need to extract the log2 fold changes from our results table creating a named vector
+  # sigOE <- sigOE %>%
+    # dplyr::filter(abs(avg_log2FC) > 0.01)
+  OE_foldchanges <- sigOE$avg_log2FC
+  names(OE_foldchanges) <- sigOE$gene
+  
+  ## Cnetplot details the genes associated with one or more terms - by default gives the top 5 significant terms (by padj)
+  plot <- cnetplot(ego, 
+                   categorySize="pvalue",          
+                   showCategory = 5,          
+                   foldChange=OE_foldchanges, 
+                   vertex.label.font=6)
+  CairoPNG(file=paste0("D:/Michal-Asia/",subvar,"_NETplot.png"),
+           units="in",
+           width=18,
+           height=10,
+           pointsize=7,
+           dpi=300)
+  print(plot)
+  dev.off()
+}
+```
+
+```{r}
+cd20 <- GetAssayData(dlbc, assay="RNA",slot="data")[c("MS4A1","CD19"),]
+cd20 <- t(cd20)
+cd20 <- as.data.frame(cd20)
+cd20['rowsum'] <- rowSums(cd20)
+cd20 <- cd20$rowsum
+dlbc@meta.data["CD20_exp"] <- ifelse(cd20==0,0,1)
+Idents(dlbc) <- dlbc@meta.data$CD20_exp
+dlbc_cd20 <- subset(dlbc, ident=1)
+Idents(dlbc_cd20) <- dlbc_cd20@meta.data$orig.ident
+
+# female
+dcd20 <- merge(subset(dlbc_cd20, ident=c("D1")),y=subset(dlbc_cd20, ident=c("D3")))
+#dcd20 <- merge(dcd20,y=subset(dlbc_cd20, ident=c("D3")))
+fd20 <- findmarkers(dcd20,"Female DLBC CD20+ B-cells")
+fd20 <- tibble::rownames_to_column(fd20,"gene")
+DEGsPlot(fd20,"Female DLBC CD20+ B-cells")
+
+# male
+#dcd20 <- merge(subset(dlbc_cd20, ident=c("D1")),y=subset(dlbc_cd20, ident=c("D3")))
+#dcd20 <- merge(dcd20,y=subset(dlbc_cd20, ident=c("D3")))
+md20 <- findmarkers(subset(dlbc_cd20,ident="D2"),"Male DLBC CD20+ B-cells")
+md20 <- tibble::rownames_to_column(md20,"gene")
+DEGsPlot(md20,"Male DLBC CD20+ B-cells")
+
+```
+```{r}
+mf_cd20 <- merge(dcd20,y=subset(dlbc_cd20, ident=c("D2")))
+Idents(mf_cd20) <- mf_cd20@meta.data$orig.ident
+mf <- FindMarkers(mf_cd20,ident.1 ="D2") #male vs female
+write.table(mf, "D:/Michal-Asia/male-vs-female.csv")
+```
+```{r}
+library(grid)
+library(gridExtra)
+
+histplot <- function(obj, gene, xl, cell_count){
+  adata <- GetAssayData(obj,slot="counts",assay="RNA")[gene,]#/cell_count
+  pl <- ggplot(as.data.frame(adata)) +
+    geom_histogram(aes(x = adata), stat = "bin", bins = 10, binwidth=0.5) +
+    #xlim(0, 120) +
+    #ylim(0,3600) +
+    xlab(xl) +
+    ylab("")
+  return(pl)
+}
+Idents(dlbc) <- dlbc@meta.data$orig.ident
+ncd <- subset(dlbc,idents = c("D1","D2","D3"))
+ncf <- subset(dlbc,idents = c("F1","F2","F3","F4"))
+ncl <- subset(dlbc,idents = c("L1","L2","L3"))
+
+a3g <- GetAssayData(object = dlbc, assay = "RNA", slot = "data")["APOBEC3G",]
+dlbc@meta.data['A3G_count'] <- a3g==0
+Idents(dlbc) <- dlbc@meta.data['A3G_count']
+sub_a3g <- subset(dlbc, idents=T)
+Idents(sub_a3g) <- sub_a3g@meta.data$orig.ident
+
+d <- subset(sub_a3g,idents = c("D1","D2","D3"))
+f <- subset(sub_a3g,idents = c("F1","F2","F3","F4"))
+l <- subset(sub_a3g,idents = c("L1","L2","L3"))
+
+d_no_a3g <- histplot(d,"MS4A1", "A3G(-) CD20 counts", length(ncd@meta.data$orig.ident))
+f_no_a3g <- histplot(f,"MS4A1", "A3G(-) CD20 counts", length(ncf@meta.data$orig.ident))
+l_no_a3g <- histplot(l,"MS4A1", "A3G(-) CD20 counts", length(ncl@meta.data$orig.ident))
+
+Idents(dlbc) <- dlbc@meta.data['A3G_count']
+sub_a3g <- subset(dlbc, idents=F)
+Idents(sub_a3g) <- sub_a3g@meta.data$orig.ident
+
+d <- subset(sub_a3g,idents = c("D1","D2","D3"))
+f <- subset(sub_a3g,idents = c("F1","F2","F3","F4"))
+l <- subset(sub_a3g,idents = c("L1","L2","L3"))
+
+d_a3g <- histplot(d,"MS4A1", "A3G(+) CD20 counts", length(ncd@meta.data$orig.ident))
+f_a3g <- histplot(f,"MS4A1", "A3G(+) CD20 counts", length(ncf@meta.data$orig.ident))
+l_a3g <- histplot(l,"MS4A1", "A3G(+) CD20 counts", length(ncl@meta.data$orig.ident))
+
+
+CairoPNG(file="D:/Michal-Asia/A3G-no-CD20counts_hist.png",
+         units="in",
+         width=18,
+         height=12,
+         pointsize=4,
+         dpi=800)
+
+grid.arrange( arrangeGrob(d_no_a3g, d_a3g,top=textGrob("DLBCL", gp=gpar(fontsize=15,font=8))), 
+              arrangeGrob(f_no_a3g, f_a3g,top=textGrob("FL"   , gp=gpar(fontsize=15,font=8))),
+              arrangeGrob(l_no_a3g, l_a3g,top=textGrob("rLN"  , gp=gpar(fontsize=15,font=8))),
+              ncol=3)
+
+```
+
+```{r}
+library(grid)
+library(gridExtra)
+
+histplot <- function(obj, gene, yl){
+  adata <- GetAssayData(obj,slot="counts",assay="RNA")[gene,]
+  pl <- ggplot(as.data.frame(adata)) +
+    geom_histogram(aes(x = adata), stat = "bin", bins = 10, binwidth=0.5) +
+    #xlim(0, xlim_in) +
+    #ylim(0,ylim_in) +
+    xlab("") +
+    ylab(yl)
+  return(pl)
+}
+
+a3g <- GetAssayData(object = dlbc, assay = "RNA", slot = "data")["APOBEC3G",]
+dlbc@meta.data['A3G_count'] <- a3g==0
+Idents(dlbc) <- dlbc@meta.data['A3G_count']
+sub_a3g <- subset(dlbc, idents=T)
+Idents(sub_a3g) <- sub_a3g@meta.data$orig.ident
+
+pad1 <- subset(sub_a3g,idents = "D1")
+pad2 <- subset(sub_a3g,idents = "D2")
+pad3 <- subset(sub_a3g,idents = "D3")
+paf1 <- subset(sub_a3g,idents = "F1")
+paf2 <- subset(sub_a3g,idents = "F2")
+paf3 <- subset(sub_a3g,idents = "F3")
+paf4 <- subset(sub_a3g,idents = "F4")
+pal1 <- subset(sub_a3g,idents = "L1")
+pal2 <- subset(sub_a3g,idents = "L2")
+pal3 <- subset(sub_a3g,idents = "L3")
+
+p4d1 <- histplot(pad1,"MS4A1", "A3G(-)")
+p4d2 <- histplot(pad2,"MS4A1", "A3G(-)")
+p4d3 <- histplot(pad3,"MS4A1", "A3G(-)")
+p4f1 <- histplot(paf1,"MS4A1", "A3G(-)")
+p4f2 <- histplot(paf2,"MS4A1", "A3G(-)")
+p4f3 <- histplot(paf3,"MS4A1", "A3G(-)")
+p4f4 <- histplot(paf4,"MS4A1", "A3G(-)")
+p4l1 <- histplot(pal1,"MS4A1", "A3G(-)")
+p4l2 <- histplot(pal2,"MS4A1", "A3G(-)")
+p4l3 <- histplot(pal3,"MS4A1", "A3G(-)")
+
+Idents(dlbc) <- dlbc@meta.data['A3G_count']
+sub_a3g <- subset(dlbc, idents=F)
+Idents(sub_a3g) <- sub_a3g@meta.data$orig.ident
+
+
+pad1 <- subset(sub_a3g,idents = "D1")
+pad2 <- subset(sub_a3g,idents = "D2")
+pad3 <- subset(sub_a3g,idents = "D3")
+paf1 <- subset(sub_a3g,idents = "F1")
+paf2 <- subset(sub_a3g,idents = "F2")
+paf3 <- subset(sub_a3g,idents = "F3")
+paf4 <- subset(sub_a3g,idents = "F4")
+pal1 <- subset(sub_a3g,idents = "L1")
+pal2 <- subset(sub_a3g,idents = "L2")
+pal3 <- subset(sub_a3g,idents = "L3")
+
+p7d1 <- histplot(pad1,"MS4A1", "A3G(+)")
+p7d2 <- histplot(pad2,"MS4A1", "A3G(+)")
+p7d3 <- histplot(pad3,"MS4A1", "A3G(+)")
+p7f1 <- histplot(paf1,"MS4A1", "A3G(+)")
+p7f2 <- histplot(paf2,"MS4A1", "A3G(+)")
+p7f3 <- histplot(paf3,"MS4A1", "A3G(+)")
+p7f4 <- histplot(paf4,"MS4A1", "A3G(+)")
+p7l1 <- histplot(pal1,"MS4A1", "A3G(+)")
+p7l2 <- histplot(pal2,"MS4A1", "A3G(+)")
+p7l3 <- histplot(pal3,"MS4A1", "A3G(+)")
+
+CairoPNG(file="D:/Michal-Asia/A3G-CD20_DLBC.png",
+         units="in",
+         width=15,
+         height=6.5,
+         pointsize=4,
+         dpi=500)
+
+grid.arrange( arrangeGrob(p4d1,p7d1,top=textGrob("DLBCL1", gp=gpar(fontsize=15,font=8))), 
+              arrangeGrob(p4d2,p7d2,top=textGrob("DLBCL2", gp=gpar(fontsize=15,font=8))), 
+              arrangeGrob(p4d3,p7d3,top=textGrob("DLBCL3", gp=gpar(fontsize=15,font=8))), 
+              ncol=3)
+
+dev.off()
+
+CairoPNG(file="D:/Michal-Asia/A3G-CD20_FL.png",
+         units="in",
+         width=20,
+         height=6.5,
+         pointsize=4,
+         dpi=500)
+
+grid.arrange( arrangeGrob(p4f1,p7f1,top=textGrob("FL1", gp=gpar(fontsize=15,font=8))), 
+              arrangeGrob(p4f2,p7f2,top=textGrob("FL2", gp=gpar(fontsize=15,font=8))), 
+              arrangeGrob(p4f3,p7f3,top=textGrob("FL3", gp=gpar(fontsize=15,font=8))),
+              arrangeGrob(p4f4,p7f4,top=textGrob("FL4", gp=gpar(fontsize=15,font=8))), 
+              ncol=4)
+
+dev.off()
+
+CairoPNG(file="D:/Michal-Asia/A3G-CD20_rLN.png",
+         units="in",
+         width=15,
+         height=6.5,
+         pointsize=4,
+         dpi=500)
+
+grid.arrange( arrangeGrob(p4l1,p7l1,top=textGrob("L1", gp=gpar(fontsize=15,font=8))), 
+              arrangeGrob(p4l2,p7l2,top=textGrob("L2", gp=gpar(fontsize=15,font=8))), 
+              arrangeGrob(p4l3,p7l3,top=textGrob("L3", gp=gpar(fontsize=15,font=8))), 
+              ncol=3)
+
+dev.off()
+```
+```{r}
+# merge annotation
+annot <- read.table("D:/Michal-Asia/AnnotationCells.csv", sep=",", header=T)
+dlbc@meta.data$Barcode <- mapply(genbarcode,row.names(dlbc@meta.data))
+dlbc@meta.data <- merge(dlbc@meta.data,annot,by=c("orig.ident","Barcode"))
+
+# subset DLBCL1 and malignant
+Idents(dlbc) <- dlbc@meta.data$orig.ident
+sub <- subset(dlbc,idents="D1")
+sub@meta.data <- sub@meta.data[sub@meta.data$orig.ident=="D1",]
+```
+
+```{r}
+Idents(sub) <- sub@meta.data$Population
+sub <- subset(sub,idents="MalignantB")
+a3g <- GetAssayData(sub,slot="data")["APOBEC3G",]
+cd20 <- GetAssayData(sub,slot="data")["MS4A1",]
+scatter.smooth(a3g,cd20)
+```
+
