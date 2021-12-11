@@ -1,0 +1,43 @@
+---
+title: "Expression metric: GSE10846 (DLBCL, 420 samples)"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+# Load libraries and data
+```{r}
+library(dplyr)
+# library(survival)
+library(splines)
+
+# genes in HR pathway
+HR_genes <- c("BLM", "RMI2", "TOP3A", "TOP3B", "MRE11A", "NBN", "RAD50", "PPP4C", "PPP4R1", "PPP4R2", "PPP4R4", "RAD52", "RDM1", "RAD54L", "RAD51", "RAD51B", "RAD51C", "RAD51D", "RECQL", "RECQL4", "RECQL5", "WRN", "RPA1", "RPA2", "RPA3", "RPA4", "EID3", "NDNL2", "NFATC2IP", "NSMCE1", "NSMCE2", "NSMCE4A", "PAXIP1", "SMC5", "SMC6", "BRCA1", "BRCA2", "EME1", "EME2", "GEN1", "H2AFX", "HELQ", "HFM1", "KAT5", "MUS81", "PARG", "RAD54B", "SHFM1", "SLX1A", "SLX4", "SPO11", "UIMC1")
+
+# gene expression data
+expdata <- read.table("D:/Shristi/GSE10846_Genes.csv",sep=",",header=T)
+rownames(expdata) <- expdata$ï..Gene
+expdata <- subset(expdata, select = -c(ï..Gene) )
+# filter selected genes
+expdata <- expdata %>%
+  dplyr::filter(row.names(expdata) %in% HR_genes)
+
+# clinic data
+clindata <- read.table("D:/Shristi/GSE10846_Clinical.csv",sep=",",header=T)
+rownames(clindata) <- clindata$ï..ID_REF
+clindata <- subset(clindata, select = -c(ï..ID_REF) )
+```
+
+# Implement a metric for gene expression
+Create a new column in clindata and assign the expression metric values to each sample.
+```{r}
+clindata['HRmetric'] <- NA
+for(sample in rownames(clindata)){
+  hrdata <- expdata[sample]
+  clindata$HRmetric[row.names(clindata)==sample] <- colMeans(expdata[sample])
+}
+```
+
+# Save the data and use it for survival analysis (GraphPad)
+```{r}
+write.csv(clindata,"D:/Shristi/GSE10846_Clinical_metric-added.csv",quote=F)
+```
