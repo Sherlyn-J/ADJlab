@@ -1,0 +1,114 @@
+---
+title: "Microarray Pipeline: Read data, quality control, histrogram/microarray chip images, save raw data"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+# Pre-requisites: libraries and data
+You need the following Bioconductor packages for Affymetrix array analysis:
+affy, affyPLM and simpleaffy if you want with older arrays (3' arrays)
+oligo if you work with newer arrays (HTA, Gene ST...)
+
+It is best to pick one of these two choices. If you load multiple packages with similar functionality, e.g. both affy and oligo or both simpleaffy and oligo, R will become confused. The affy-based packages and oligo contain methods with the same name (e.g. intensity(), MAplot(), rma()) but with slightly different code. So R will not know if it has to use the intensity() method from the affy packages or from oligo. By default it chooses affy over oligo. So you always have to specify the packagename for the oligo methods (see section on how to specify the package of a method) and even then it does not always work well.
+
+affydata if you need example data sets
+ArrayExpress if you want to obtain data from ArrayExpress
+limma
+Biobase
+Biostrings
+genefilter
+Bioconductor packages for the annotation of the spots on the arrays
+
+## Load libraries
+```{r}
+library(affy)
+library(Biobase)
+library(Biostrings)
+library(dplyr)
+library(GEOquery)
+library(genefilter)
+library(limma)
+library(tibble)
+#library(org.Hs.eg.db)
+#library(hgu133plus2.db)
+library(hgu133plus2cdf)
+#library(oligo)
+```
+
+## Load data
+```{r}
+my.gse <- "GSE10846"
+setwd("D:/microarray/")
+if(!file.exists("geo_downloads")) dir.create("geo_downloads")
+if(!file.exists("results"))  dir.create("results", recursive=TRUE)
+my.geo.gse <- getGEO(GEO=my.gse, filename=NULL, destdir="geo_downloads", GSElimits=NULL, GSEMatrix=TRUE, AnnotGPL=TRUE, getGPL=TRUE)
+##get rid of list structure
+my.geo.gse <- my.geo.gse[[1]]
+```
+
+## Untar CEL files
+```{r}
+if(!file.exists(paste0("./geo_downloads/",my.gse)))
+getGEOSuppFiles(my.gse, makeDirectory=T, baseDir="geo_downloads")
+untar(paste0("geo_downloads/",my.gse,"/",my.gse,"_RAW.tar"), exdir=paste0("geo_downloads/",my.gse,"/CEL"))
+# get file list
+my.cels <- list.files(paste0("geo_downloads/",my.gse,"/CEL"), pattern=".cel", ignore.case = T)
+my.cels <- sort(my.cels)
+```
+
+# Format Phenodata: modify according to array specifics
+```{r}
+##make data frame of phenoData
+my.pdata <- as.data.frame(pData(my.geo.gse), stringsAsFactors=F)
+## reformat
+# gender
+my.pdata$characteristics_ch1 <- substring(my.pdata$characteristics_ch1, 9) # remove "Gender: " from string
+my.pdata <- dplyr::rename(my.pdata, Gender=characteristics_ch1)
+# age
+my.pdata$characteristics_ch1.1 <- substring(my.pdata$characteristics_ch1.1, 6) # remove "Age: " from string
+my.pdata <-  dplyr::rename(my.pdata, Age=characteristics_ch1.1)
+# DLBC_class
+my.pdata$characteristics_ch1.6 <- substring(my.pdata$characteristics_ch1.6, 44) # remove "Clinical info: Final microarray diagnosis: "
+my.pdata <- rename(my.pdata, DLBC_Class=characteristics_ch1.6)
+my.pdata$DLBC_Class <- gsub(' DLBCL', '', my.pdata$DLBC_Class)
+# status
+my.pdata$characteristics_ch1.7 <- substring(my.pdata$characteristics_ch1.7, 34) # remove "Clinical info: Follow up status: "
+my.pdata <-  dplyr::rename(my.pdata, Status=characteristics_ch1.7)
+# status
+my.pdata$characteristics_ch1.8 <- substring(my.pdata$characteristics_ch1.8, 33) # remove "Clinical info: Follow up years: "
+my.pdata <-  dplyr::rename(my.pdata, Follow_up_years=characteristics_ch1.8)
+my.pdata$Follow_up_years <- as.numeric(my.pdata$Follow_up_years)
+# Treatment
+my.pdata$characteristics_ch1.9 <- substring(my.pdata$characteristics_ch1.9, 30) # remove "Clinical info: Chemotherapy: "
+my.pdata <-  dplyr::rename(my.pdata, Treatment=characteristics_ch1.9)
+my.pdata$Treatment <- gsub('-Like Regimen', '', my.pdata$Treatment)
+# ECOG
+my.pdata$characteristics_ch1.10 <- substring(my.pdata$characteristics_ch1.10, 41) # remove "Clinical info: ECOG performance status: "
+my.pdata <-  dplyr::rename(my.pdata, ECOG=characteristics_ch1.10)
+# Stage
+my.pdata$characteristics_ch1.11 <- substring(my.pdata$characteristics_ch1.11, 23) # remove "Clinical info: Stage: " from string
+my.pdata <-  dplyr::rename(my.pdata, Stage=characteristics_ch1.11)
+
+## remove unnecessary columns
+my.pdata <- my.pdata[, c("Gender", "Age", "DLBC_Class", "Follow_up_years", "Status", "Treatment", "ECOG", "Stage")]
+my.pdata <- my.pdata[order(rownames(my.pdata)), ]
+
+## manual tweaking of rownames
+rownames(my.pdata) <- paste(rownames(my.pdata), ".cel.gz", sep="")
+rownames(my.pdata) <- gsub("GSM361244.cel.gz","GSM361244.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361243.cel.gz","GSM361243.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361242.cel.gz","GSM361242.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361241.cel.gz","GSM361241.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361240.cel.gz","GSM361240.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361239.cel.gz","GSM361239.CEL.gz",rownames(my.pdata))
+
+## check that the filenames and phenodata are exactly same
+rownames(my.pdata) == my.cels
+write.table(my.pdata, file=paste0("geo_downloads/",my.gse,"/CEL/",my.gse,"_SelectPhenoData.txt"), sep="\t", quote=F)
+```
+# Read CEL files using affy
+```{r}
+cel.path <- paste0("geo_downloads/",my.gse,"/CEL")
+data <- ReadAffy(celfile.path=cel.path,phenoData=paste(cel.path, paste0(my.gse,"_SelectPhenoData.txt"), sep="/"))
+```
+
