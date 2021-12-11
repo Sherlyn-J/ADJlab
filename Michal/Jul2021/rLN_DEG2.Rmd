@@ -1,0 +1,186 @@
+---
+title: "rLN2"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(dplyr)
+library(tidyverse)
+library(Seurat)
+# library(SeuratData)
+library(patchwork)
+library(ggplot2)
+library(Cairo)
+library(EnhancedVolcano)
+library(ggrepel)
+library(RColorBrewer)
+```
+
+# load data
+```{r}
+dlbc.l1 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN1/")
+l1 <- CreateSeuratObject(counts = dlbc.l1, project = "L1", min.cells = 3, min.features = 200)
+l1@meta.data[['batch']] <- 1
+l1@meta.data[['sex']] <- 0
+
+dlbc.l2 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN2/")
+l2 <- CreateSeuratObject(counts = dlbc.l2, project = "L2", min.cells = 3, min.features = 200)
+l2@meta.data[['batch']] <- 2
+l2@meta.data[['sex']] <- 0
+
+dlbc.l3 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN3/")
+l3 <- CreateSeuratObject(counts = dlbc.l3, project = "L3", min.cells = 3, min.features = 200)
+l3@meta.data[['batch']] <- 2
+l3@meta.data[['sex']] <- 1
+```
+
+# merge Seurat objects
+```{r}
+rLN <- merge(x=l1, y=c(l2,l3), add.cell.ids=c("L1","L2","L3"), merge.data=T, project="LymphNodes")
+rLN
+```
+
+# check cell barcodes
+```{r}
+head(colnames(rLN))
+```
+
+# check cell identities
+```{r}
+table(rLN$orig.ident)
+```
+
+# assign MYC/BCL2/BCL6 subtypes
+```{r}
+neg_ids <- WhichCells(rLN, expression= MYC>0, slot="count")
+neg_cells<- subset(rLN,cells=neg_ids1)
+neg_cells@meta.data['m26_status'] <- "M+"
+
+pos_ids   <- WhichCells(rLN, expression= MYC>0 & BCL2 >0 & BCL6==0, slot="count")
+pos_cells <- subset(rLN,cells=pos_ids)
+pos_cells@meta.data['m26_status'] <- "M+2+6-"
+
+neg_ids1 <- WhichCells(rLN, expression= MYC>0 & BCL2 >0 & BCL6>0, slot="count")
+neg_cells1<- subset(rLN,cells=neg_ids1)
+neg_cells1@meta.data['m26_status'] <- "M+2+6+"
+
+neg_ids2 <- WhichCells(rLN, expression= MYC>0 & BCL2==0 & BCL6>0, slot="count")
+neg_cells2<- subset(rLN,cells=neg_ids2)
+neg_cells2@meta.data['m26_status'] <- "M+2-6+"
+
+neg_ids3 <- WhichCells(rLN, expression= MYC>0 & BCL2==0 & BCL6==0, slot="count")
+neg_cells3<- subset(rLN,cells=neg_ids3)
+neg_cells3@meta.data['m26_status'] <- "M+2-6-"
+
+neg_ids4 <- WhichCells(rLN, expression= MYC==0 & BCL2 >0 & BCL6>0, slot="count")
+neg_cells4<- subset(rLN,cells=neg_ids4)
+neg_cells4@meta.data['m26_status'] <- "M-2+6+"
+
+neg_ids5 <- WhichCells(rLN, expression= MYC==0 & BCL2 >0 & BCL6==0, slot="count")
+neg_cells5<- subset(rLN,cells=neg_ids5)
+neg_cells5@meta.data['m26_status'] <- "M-2+6-"
+
+neg_ids6 <- WhichCells(rLN, expression= MYC==0 & BCL2==0 & BCL6>0, slot="count")
+neg_cells6<- subset(rLN,cells=neg_ids6)
+neg_cells6@meta.data['m26_status'] <- "M-2-6+"
+
+neg_ids7 <- WhichCells(rLN, expression= MYC==0 & BCL2==0 & BCL6==0, slot="count")
+neg_cells7<- subset(rLN,cells=neg_ids7)
+neg_cells7@meta.data['m26_status'] <- "M-2-6-"
+
+rLN2 <- merge(x=pos_cells, y=c(neg_cells1,neg_cells2,neg_cells3,neg_cells4,neg_cells5,neg_cells6,neg_cells7),
+              add.cell.ids=c("P","N","N","N","N","N","N","N"), merge.data = T, project = "rLymphNode")
+```
+
+# switch active identities
+```{r}
+Idents(rLN2) <- rLN2@meta.data$m26_status
+levels(rLN2)
+```
+```{r}
+table(rLN2@meta.data$m26_status)
+```
+# log-normalize and scale
+```{r}
+rLN2 <- NormalizeData(rLN2, normalization.method = "LogNormalize", scale.factor = 10000)
+rLN2 <- ScaleData(rLN2)
+```
+
+
+# save RDS
+```{r}
+# saveRDS(rLN2, file="D:/Michal_Jul2021/sc_analysis/rLN2_norm_labeled.rds")
+```
+
+# DEG
+```{r}
+DEG.markers <- FindMarkers(rLN2, ident.1 = "M+2+6-")
+```
+
+
+```{r}
+# DEG.markers['log10P'] <- -1*log10(DEG.markers$p_val_adj)
+DEG.markers
+```
+
+```{r}
+# volcano
+pdf(file="D:/Michal_Jul2021/sc_analysis/Mp2p6n_vs_rest_DEG.pdf",width = 8, height = 10)
+evol<- EnhancedVolcano(DEG.markers,
+                lab=rownames(DEG.markers),
+                x="avg_log2FC",
+                y="p_val_adj",
+                title='Reactive lymph nodes: M+2+6- cells vs. others',
+                subtitle='',
+                FCcutoff=0.5,
+                pCutoff = 0.05,
+                pointSize = 3,
+                labSize = 4.0,
+                labCol = 'black')
+print(evol)
+dev.off()
+```
+
+```{r}
+rLN2 <- FindVariableFeatures(rLN2, selection.method = "vst", nfeatures = 2000)
+rLN2 <- RunPCA(rLN2, features = VariableFeatures(object = rLN2))
+rLN2 <- FindNeighbors(rLN2, dims = 1:10)
+rLN2 <- FindClusters(rLN2, resolution = 0.5)
+```
+# generate UMAP
+```{r}
+rLN2 <- RunUMAP(rLN2, dims = 1:10)
+```
+
+# plot
+```{r}
+Idents(rLN2) <- rLN2@meta.data$orig.ident
+my_col <- c('L1'='#73d055ff','L2'='#fde725ff','L3'='#481567ff')
+png(filename = "D:/Michal_Jul2021/sc_analysis/UMAP_samples.png", width = 6, height=6, units="in", res=300)
+umap <- DimPlot(rLN2, reduction = "umap", cols=my_col)
+print( umap)
+dev.off()
+```
+
+
+```{r}
+rLN2@meta.data['cells'] <- ifelse(rLN2@meta.data$m26_status=="M+2+6-",rLN2@meta.data$m26_status,"others")
+# rLN2@meta.data <- rLN2[ order(rLN2@meta.data$cells), ]
+Idents(rLN2) <- rLN2@meta.data$cells
+my_col <- c('M+2+6-'='#39568cff','others'='#95d840ff')
+png(filename = "D:/Michal_Jul2021/sc_analysis/UMAP_selected.png", width = 6, height=6, units="in", res=300)
+umap <- DimPlot(rLN2, reduction = "umap", cols = my_col)
+print( umap)
+dev.off()
+```
+# save RDS
+```{r}
+# saveRDS(rLN2, file = "D:/Michal_Jul2021/sc_analysis/rLN2_umap.rds")
+```
+
+Save DEG
+```{r}
+write.csv(DEG.markers,"D:/Michal_Jul2021/sc_analysis/Mp2p6n_vs_others_DEG.csv",quote=F,row.names = T)
+```
