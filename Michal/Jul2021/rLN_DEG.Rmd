@@ -1,0 +1,178 @@
+---
+title: "DLBCL michal"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(Cairo)
+library(ggrepel)
+```
+
+```{r}
+dlbc.l1 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN1/")
+l1 <- CreateSeuratObject(counts = dlbc.l1, project = "L1", min.cells = 3, min.features = 200)
+l1@meta.data[['batch']] <- 1
+l1@meta.data[['sex']] <- 0
+
+dlbc.l2 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN2/")
+l2 <- CreateSeuratObject(counts = dlbc.l2, project = "L2", min.cells = 3, min.features = 200)
+l2@meta.data[['batch']] <- 2
+l2@meta.data[['sex']] <- 0
+
+dlbc.l3 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN3/")
+l3 <- CreateSeuratObject(counts = dlbc.l3, project = "L3", min.cells = 3, min.features = 200)
+l3@meta.data[['batch']] <- 2
+l3@meta.data[['sex']] <- 1
+```
+
+# merge Seurat objects
+```{r}
+rLN <- merge(x=l1, y=c(l2,l3), add.cell.ids=c("L1","L2","L3"), merge.data=T, project="LymphNodes")
+rLN
+```
+```{r}
+head(colnames(rLN))
+```
+```{r}
+table(rLN$orig.ident)
+```
+```{r}
+pos_ids   <- WhichCells(rLN, expression= MYC>0 & BCL2 >0 & BCL6==0, slot="count")
+pos_cells <- subset(rLN,cells=pos_ids)
+pos_cells@meta.data['m26_status'] <- "M+2+6-"
+
+neg_ids1 <- WhichCells(rLN, expression= MYC>0 & BCL2 >0 & BCL6>0, slot="count")
+neg_cells1<- subset(rLN,cells=neg_ids1)
+neg_cells1@meta.data['m26_status'] <- "M+2+6+"
+
+neg_ids2 <- WhichCells(rLN, expression= MYC>0 & BCL2==0 & BCL6>0, slot="count")
+neg_cells2<- subset(rLN,cells=neg_ids2)
+neg_cells2@meta.data['m26_status'] <- "M+2-6+"
+
+neg_ids3 <- WhichCells(rLN, expression= MYC>0 & BCL2==0 & BCL6==0, slot="count")
+neg_cells3<- subset(rLN,cells=neg_ids3)
+neg_cells3@meta.data['m26_status'] <- "M+2-6-"
+
+neg_ids4 <- WhichCells(rLN, expression= MYC==0 & BCL2 >0 & BCL6>0, slot="count")
+neg_cells4<- subset(rLN,cells=neg_ids4)
+neg_cells4@meta.data['m26_status'] <- "M-2+6+"
+
+neg_ids5 <- WhichCells(rLN, expression= MYC==0 & BCL2 >0 & BCL6==0, slot="count")
+neg_cells5<- subset(rLN,cells=neg_ids5)
+neg_cells5@meta.data['m26_status'] <- "M-2+6-"
+
+neg_ids6 <- WhichCells(rLN, expression= MYC==0 & BCL2==0 & BCL6>0, slot="count")
+neg_cells6<- subset(rLN,cells=neg_ids6)
+neg_cells6@meta.data['m26_status'] <- "M-2-6+"
+
+neg_ids7 <- WhichCells(rLN, expression= MYC==0 & BCL2==0 & BCL6==0, slot="count")
+neg_cells7<- subset(rLN,cells=neg_ids7)
+neg_cells7@meta.data['m26_status'] <- "M-2-6-"
+
+rLN2 <- merge(x=pos_cells, y=c(neg_cells1,neg_cells2,neg_cells3,neg_cells4,neg_cells5,neg_cells6,neg_cells7),
+              add.cell.ids=c("P","N","N","N","N","N","N","N"), merge.data = T, project = "rLymphNode")
+```
+
+
+```{r}
+rLN2@meta.data
+```
+
+
+# integrate data objects
+```{r}
+# obj.list <- c(l1,l2,l3)
+# obj.list <- lapply(X = obj.list, FUN = function(x) {
+#     x <- NormalizeData(x)
+#     x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+# })
+# 
+# features <- SelectIntegrationFeatures(object.list = obj.list)
+```
+
+```{r}
+# rln.anchors <- FindIntegrationAnchors(object.list = obj.list, anchor.features = features)
+# # this command creates an 'integrated' data assay
+# rln.integrated <- IntegrateData(anchorset = rln.anchors)
+```
+
+```{r}
+#modify metadata
+# rln.integrated@meta.data
+## 8061 cells with orig.ident
+```
+
+```{r}
+# ## add myc/bcl2/bcl6 class
+# "
+# MYC+BCL2+BCL6+ -> M26
+# MYC+BCL2+BCL6- -> M2_
+# MYC+BCL2-BCL6+ -> M_6
+# MYC+BCL2-BCL6- -> M__
+# MYC-BCL2+BCL6+ -> _26
+# MYC-BCL2+BCL6- -> _2_
+# MYC-BCL2-BCL6+ -> __6
+# MYC-BCL2-BCL6- -> ___
+# "
+# 
+# AssignM26Class <- function(m,b2,b6){
+#   if (m>0 & b2>0 & b6>0){
+#     return ("cM26")
+#   }else if(m>0 & b2>0 & b6==0){
+#     return ("cM2_")
+#   }else if(m>0 & b2==0 & b6>0){
+#     return ("cM_6")
+#   }else if(m>0 & b2==0 & b6==0){
+#     return ("cM__")
+#   }else if(m==0 & b2>0 & b6>0){
+#     return ("c_26")
+#   }else if(m==0 & b2>0 & b6==0){
+#     return ("c_2_")
+#   }else if(m==0 & b2==0 & b6>0){
+#     return ("c__6")
+#   }else{
+#     return ("no")
+#   }
+# }
+# 
+# assign <- c()
+# exp_data <- GetAssayData(rln.integrated, assay = "RNA", slot = "counts")[c("MYC","BCL2","BCL6"),]
+# exp_data <- as.data.frame(t(as.matrix(exp_data)))
+# exp_data['Class'] <- apply(exp_data[,c('MYC','BCL2','BCL6')], 1, function(x) AssignM26Class(exp_data$MYC,exp_data$BCL2,exp_data$BCL6))
+
+```
+
+
+```{r}
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+# DefaultAssay(rln.integrated) <- "integrated"
+# 
+# # Run the standard workflow for visualization and clustering
+# rln.integrated <- ScaleData(rln.integrated, verbose = FALSE)
+# rln.integrated <- RunPCA(rln.integrated, npcs = 30, verbose = FALSE)
+# rln.integrated <- RunUMAP(rln.integrated, reduction = "pca", dims = 1:30)
+# rln.integrated <- FindNeighbors(rln.integrated, reduction = "pca", dims = 1:30)
+# rln.integrated <- FindClusters(rln.integrated, resolution = 0.5)
+```
+
+```{r}
+# Visualization
+# p1 <- DimPlot(rln.integrated, reduction = "umap", group.by = "orig.ident")
+# p2 <- DimPlot(rln.integrated, reduction = "umap", label = TRUE, repel = TRUE)
+# p1 + p2
+```
+```{r}
+# FeaturePlot(rln.integrated, features = c("MYC", "BCL2", "BCL6"), slot = "data")
+```
+
+```{r}
+table(rLN2@meta.data$m26_status)
+```
+
