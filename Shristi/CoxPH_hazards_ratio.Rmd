@@ -1,0 +1,79 @@
+---
+title: "Cox Proportional Hazards analysis"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+# Load data
+Load clinical data and append gene expression data to the dataframe
+```{r}
+library(dplyr)
+library(tibble)
+library(reshape)
+library(tidyverse)
+
+# genes in HR pathway
+HR_genes <- c("BLM", "RMI1", "TOP3A", "TOP3B", "MRE11A", "NBN", "RAD50", "PPP4C", "PPP4R1", "PPP4R2", "PPP4R4", "RAD52", "RDM1", "RAD54L", "RAD51", "RAD51B", "RAD51C", "RAD51D", "RECQL", "RECQL5", "WRN", "RPA1", "RPA2", "RPA3", "RPA4", "EID3", "NDNL2", "NFATC2IP", "NSMCE1", "NSMCE2", "NSMCE4A", "PAXIP1", "SMC5", "SMC6", "BRCA1", "BRCA2", "EME1", "EME2", "GEN1", "KAT5", "MUS81", "PARG", "RAD54B", "SHFM1", "SLX1A", "SLX4", "SPO11", "UIMC1", "TOPBP1", "POLD1", "POLD2", "POLD3", "POLD4", "XRCC3", "XRCC2", "DNA2", "CTIP", "CTCF", "SSBP1")
+
+# gene expression data
+expdata <- read.table("D:/Shristi/GSE10846_Genes.csv",sep=",",header=T)
+rownames(expdata) <- expdata$ï..Gene
+expdata <- subset(expdata, select = -c(ï..Gene) )
+# filter selected genes
+expdata <- expdata %>%
+  dplyr::filter(row.names(expdata) %in% HR_genes)
+
+# clinic data
+clindata <- read.table("D:/Shristi/GSE10846_Clinical.csv",sep=",",header=T)
+rownames(clindata) <- clindata$ID_REF
+
+# append exp data to clinical data
+get_exp <- function(x,gene){ expdata[gene,x] }
+for (gene in HR_genes){
+  clindata[gene] <- sapply(clindata$ï..ID_REF,get_exp,gene=gene)
+}
+```
+
+# Cox Proportional Hazards (CPH) Model: univariate
+Install required libraries and call the CPH regression model in R
+```{r}
+## if the packages are not installed:
+# install.packages(c("survival","survminer"))
+
+library(survival)
+library(survminer)
+res.cox <- coxph(Surv(as.numeric(OS_time),as.numeric(OS_status)) ~ RAD51, data=clindata)
+summary(res.cox)
+```
+# Notes
+1. “z” gives the Wald statistic value
+2. Sign of the regression coefficients (coef): A positive sign means that the hazard (risk of death) is higher, and thus the prognosis worse, for subjects with higher values of that variable
+
+# Cox Proportional Hazards (CPH) Model: multivariate
+```{r}
+## if the packages are not installed:
+# install.packages(c("survival","survminer"))
+
+library(survival)
+library(survminer)
+res.cox <- coxph(Surv(as.numeric(OS_time),as.numeric(OS_status)) ~ RAD51+BLM+PPP4C, data=clindata)
+summary(res.cox)
+```
+
+# Visualization
+```{r}
+# Plot the baseline survival function
+ggsurvplot(survfit(res.cox), color = "#2E9FDF",
+           ggtheme = theme_minimal(), data=clindata)
+```
+
+```{r}
+clindata$R51q <- ntile(clindata[,"RAD51"], n=2)
+clindata <- clindata[!is.na(clindata$R51q), ]
+lowR <- survfit(Surv(as.numeric(OS_time),as.numeric(OS_status)) ~ RAD51, data=clindata[clindata$R51q==1,])
+higR <- survfit(Surv(as.numeric(OS_time),as.numeric(OS_status)) ~ RAD51, data=clindata[clindata$R51q==2,])
+fit  <- list(Low=lowR, High=higR)
+ggsurvplot_combine(fit,clindata)
+```
+
+
