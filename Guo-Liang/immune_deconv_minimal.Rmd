@@ -1,0 +1,72 @@
+---
+title: Immune-deconv minimal
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+library(fst)
+library(immunedeconv)
+```
+
+# ensembl for HGNCs
+```{r}
+ens <- read.fst("D:/STING/ensembl101.fst") %>% 
+  as_tibble() %>% 
+  select(gene=ensembl_gene_id, gene_symbol=external_gene_name) %>% 
+  distinct()
+```
+
+# read exp counts
+```{r}
+exp_subset <- read.table("D:/STING/STING_GSE117556.csv",sep="\t",header = T) %>% 
+  pivot_longer(cols=starts_with("GSM"), names_to="sample")
+exp_subset
+```
+
+# cibersort settings
+```{r}
+set_cibersort_binary("~/CIBERSORT.R")
+set_cibersort_mat("~/lm22.txt")
+```
+
+```{r}
+to_immunedeconv =
+  exp_subset %>%
+  select(sample, DAVID, value) %>%
+  mutate(dataset="roche") %>% 
+  group_nest(dataset, .key = "gene_expression") %>%
+  mutate(gene_expression =
+           gene_expression %>%
+           map(spread, sample, value) %>%
+           map(column_to_rownames, "DAVID"))
+```
+
+```{r}
+to_immunedeconv
+```
+
+```{r}
+methods_to_use =
+  c("mcp_counter", "xcell") %>% #
+  enframe(NULL, "method")
+```
+
+```{r}
+dtl_immunedeconv =
+  methods_to_use %>%
+  expand_grid(to_immunedeconv) %>%
+  mutate(gene_expression =
+           pmap(select(., -dataset),
+                       deconvolute)) %>%
+  unnest(gene_expression) %>%
+  gather(-method, -cell_type, -dataset,
+         key = sample,
+         value = value) %>%
+  drop_na()
+
+dtl_immunedeconv
+```
