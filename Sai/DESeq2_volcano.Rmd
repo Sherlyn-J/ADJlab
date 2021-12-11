@@ -1,0 +1,184 @@
+---
+title: "Sai - DESeq2 and GSEA of mitochondrial genes"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+# data engineering
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(tidyverse)
+library(readbulk)
+
+# Visualization
+library(Cairo)
+library(ggExtra)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(plotly)
+library(RColorBrewer)
+library(viridis)
+
+# DEG
+library(DESeq2)
+library(EnhancedVolcano)
+```
+
+# Load data
+
+```{r}
+coldata <- read.delim("D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/mitochondria_coldata.txt")
+coldata
+```
+
+```{r}
+main <- read.delim("D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/merged_gene_counts_4oct21.txt", sep=",")
+main <- main[ , c("Gene", coldata$Sample) ] %>% column_to_rownames("Gene")
+main
+```
+
+# DESeq (wt-untreated as ref)
+```{r}
+#initialize DESeq obj
+dds <- DESeqDataSetFromMatrix(countData = main, 
+                              colData   = coldata, 
+                              design    = ~ status)
+dds$status <- factor(dds$status, levels=c("wt_untreated","ko_untreated"))
+dds$status <- relevel(dds$status, ref="wt_untreated")
+dds <- DESeq(dds)
+```
+# Normalized data
+```{r}
+norm <- counts(dds,normalized=T) %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var="GENE") %>% 
+  mutate("DESCRIPTION"=NA)
+norm <- norm[, c("GENE","DESCRIPTION",coldata$Sample)]
+write.table(norm, "D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/ovcar_normdata_4oct21.txt", sep="\t",quote=F,row.names=F)
+```
+
+# Cls file
+```{r}
+cls <- paste( paste0(length(coldata$Sample),"\t2\t1"),"#\tko_untreated\tko_untreated\twt_untreated\twt_untreated",paste(coldata$status,collapse="\t"),sep = "\n" )
+writeLines(cls)
+write_file(cls,file="D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/ovcar_4oct21.cls")
+```
+
+```{r}
+resultsNames(dds)
+```
+# WT untreated vs KO untreated
+```{r}
+res <- results(dds, name="status_ko_untreated_vs_wt_untreated")
+res
+# sig_genes <- res %>% na.omit() %>% dplyr::filter( (abs(res$log2FoldChange)>2) & (res$padj<0.05) )
+# selected_genes <- rownames(sig_genes)
+write.table(res, "D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/ko_untreated_vs_wt_untreated.csv",sep=",",quote=F)
+```
+```{r}
+pdf(file="D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/ko_untreated_vs_wt_untreated_4oct21.pdf", width=8, height=8)
+EnhancedVolcano(res,
+                lab=rownames(res), 
+                x='log2FoldChange',
+                y='padj',
+                # selectLab = c('DPYSL3','SLC12A8','BGN','TGFBI','IL2RB','BGN','TRIB','SLC2A3','LOX','FOXN','TJP3','TMEM40','ALDH1A1','CLDN7','ROBO1'),
+                # drawConnectors = TRUE,
+                labFace = 'bold',
+                # widthConnectors = 0.75,
+                labSize = 4.0,
+                colAlpha = 0.4,
+                pointSize = 1,
+                FCcutoff = 1,
+                pCutoff = 0.05,
+                title='GES1 untreated (DMSO): ARID1A KO vs WT',
+                subtitle='') # +
+  # theme(
+  #   panel.grid.major = element_blank(),
+  #   panel.grid.minor = element_blank()
+  # )
+dev.off()
+```
+
+# WT untreated vs WT treated
+```{r}
+res <- results(dds, name="status_wt_treated_vs_wt_untreated")
+res
+# sig_genes <- res %>% na.omit() %>% dplyr::filter( (abs(res$log2FoldChange)>2) & (res$padj<0.05) )
+# selected_genes <- rownames(sig_genes)
+write.table(res, "D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/wt_treated_vs_wt_untreated.csv",sep=",",quote=F)
+```
+
+```{r}
+pdf(file="D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/wt_treated_vs_wt_untreated_4oct21.pdf", width=8, height=8)
+EnhancedVolcano(res,
+                lab=rownames(res), 
+                x='log2FoldChange',
+                y='padj',
+                # selectLab = c('DPYSL3','SLC12A8','BGN','TGFBI','IL2RB','BGN','TRIB','SLC2A3','LOX','FOXN','TJP3','TMEM40','ALDH1A1','CLDN7','ROBO1'),
+                # drawConnectors = TRUE,
+                labFace = 'bold',
+                # widthConnectors = 0.75,
+                labSize = 4.0,
+                colAlpha = 0.4,
+                pointSize = 1,
+                FCcutoff = 1,
+                pCutoff = 0.05,
+                title='GES1 WT: Volasertib 10nM vs untreated (DMSO)',
+                subtitle='') # +
+  # theme(
+  #   panel.grid.major = element_blank(),
+  #   panel.grid.minor = element_blank()
+  # )
+dev.off()
+```
+
+# DESeq (wt-untreated as ref)
+```{r}
+#initialize DESeq obj
+dds <- DESeqDataSetFromMatrix(countData = main, 
+                              colData   = coldata, 
+                              design    = ~ status)
+dds$status <- factor(dds$status, levels=c("wt_untreated","wt_treated","ko_untreated","ko_treated"))
+dds$status <- relevel(dds$status, ref="wt_treated")
+dds <- DESeq(dds)
+```
+
+```{r}
+resultsNames(dds)
+```
+
+# WT untreated vs WT treated
+```{r}
+res <- results(dds, name="status_ko_treated_vs_wt_treated")
+res
+# sig_genes <- res %>% na.omit() %>% dplyr::filter( (abs(res$log2FoldChange)>2) & (res$padj<0.05) )
+# selected_genes <- rownames(sig_genes)
+write.table(res, "D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/ko_treated_vs_wt_treated.csv",sep=",",quote=F)
+```
+
+```{r}
+pdf(file="D:/Sherlyn-bioinfo/mitochondria/RNA-seq_processed/ko_treated_vs_wt_treated_4oct21.pdf", width=8, height=8)
+EnhancedVolcano(res,
+                lab=rownames(res), 
+                x='log2FoldChange',
+                y='padj',
+                # selectLab = c('DPYSL3','SLC12A8','BGN','TGFBI','IL2RB','BGN','TRIB','SLC2A3','LOX','FOXN','TJP3','TMEM40','ALDH1A1','CLDN7','ROBO1'),
+                # drawConnectors = TRUE,
+                labFace = 'bold',
+                # widthConnectors = 0.75,
+                labSize = 4.0,
+                colAlpha = 0.4,
+                pointSize = 1,
+                FCcutoff = 1,
+                pCutoff = 0.05,
+                title='GES1 treated with Volasertib 10nM: ARID1A KO vs WT',
+                subtitle='') # +
+  # theme(
+  #   panel.grid.major = element_blank(),
+  #   panel.grid.minor = element_blank()
+  # )
+dev.off()
+```
