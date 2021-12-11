@@ -1,0 +1,274 @@
+---
+title: "R Notebook"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tibble)
+library(data.table)
+
+e <- read.csv2("D:/Shristi/collated for Patrick/GSE10846_Genes_1.csv", sep=",", check.names = F)
+```
+
+```{r}
+e
+```
+
+
+```{r}
+e <- as_tibble(t(e), rownames = "row_names")
+colnames(e) <- e[c(1),]
+e <- e[-c(1), ]
+e
+```
+
+
+
+```{r}
+a3g <- ntile(e$APOBEC3G, 4)
+```
+
+```{r}
+e <- e %>% dplyr:: mutate_at(colnames(e)[2:length(colnames(e))], ~ (scale(as.numeric(.)) %>% as.vector)) # %>% as.tibble()
+e
+```
+
+```{r}
+e['A3Gm'] <- a3g
+```
+
+
+```{r}
+c <- read.csv2("D:/Shristi/collated for Patrick/GSE10846_Clinical.csv", sep=",")
+c
+```
+
+```{r}
+m <- cbind(c,e[,c("A3Gm")])
+m <- m %>% dplyr::filter(A3Gm!=2)
+```
+
+```{r}
+m <- m %>% dplyr::filter(A3Gm!=3)
+# m['z_ddx6'] <- scale(as.numeric(m$DDX6))
+typeof(m$A3Gm)
+```
+
+```{r}
+m <- m %>% dplyr::filter(Sex.0..female.1..male != "x")
+```
+
+```{r}
+m['combine'] <- paste0(m$Sex.0..female.1..male, "_", m$A3Gm)
+# m['combine']
+```
+
+```{r}
+m
+```
+
+
+# average Z-score of CRP genes by patient subset
+```{r}
+# female, low A3G
+sub <- m[m$combine=="0_1", ]
+sub0_1 <- list(sub$ï..ID_REF)
+# female, high A3G
+sub <- m[m$combine=="0_4", ]
+sub0_4 <- list(sub$ï..ID_REF)
+# male, low A3G
+sub <- m[m$combine=="1_1", ]
+sub1_1 <- list(sub$ï..ID_REF)
+# male, high A3G
+sub <- m[m$combine=="1_4", ]
+sub1_4 <- list(sub$ï..ID_REF)
+
+sub1_4
+```
+
+```{r}
+CRPs <- read.delim("C:/Users/csislyn/Desktop/WP_CYTOPLASMIC_RIBOSOMAL_PROTEINS.txt", sep="\n")
+CRPs
+```
+
+```{r}
+e$Gene
+```
+
+## APOBEC3G
+```{r}
+# subset by patient and CRP genes
+low <- e[ e$Gene %in% sub1[[1]], colnames(e) %in% c("Gene",CRPs$Genes) ]
+low
+high <- e[ e$Gene %in% sub4[[1]], colnames(e) %in% c("Gene",CRPs$Genes) ]
+high
+# write.table(low, "C:/Users/csislyn/Desktop/temp.csv", sep = "\t", quote=F, row.names = F)
+```
+
+```{r}
+# transpose high/low and get rowMeans
+low <- as_tibble(t(low), rownames = "Gene")
+colnames(low) <- low[c(1),]
+low <- low[-c(1), ]
+low 
+
+high <- as_tibble(t(high), rownames = "Gene")
+colnames(high) <- high[c(1),]
+high <- high[-c(1), ]
+high 
+```
+# Average Z-score for each CRP
+```{r}
+# low[] <- lapply(low, as.numeric)
+#low <- low %>% mutate("avg_Zscore"=rowMeans(low[, colnames(low) %in% sub1[[1]]]))
+low 
+
+#high
+high[] <- lapply(high,as.numeric)
+high <- high %>% mutate("avg_Zscore"=rowMeans(high[, colnames(high) %in% sub4[[1]]]))
+```
+
+```{r}
+low['APOBEC3G Category'] <- "low"
+high['APOBEC3G Category'] <- "high"
+```
+
+```{r}
+plot_data <- rbind( low[, c("avg_Zscore","APOBEC3G Category")], high[, c("avg_Zscore","APOBEC3G Category")])
+```
+
+```{r}
+library(Cairo)
+Cairo(file="C:/Users/csislyn/Desktop/apobec_genezscore_Lenz.png", dpi=400, width=3.6, height = 6, units="in")
+g <- ggplot(plot_data, aes(x=`APOBEC3G Category`,y=avg_Zscore, group=`APOBEC3G Category`)) + geom_violin(trim=F,scale = "count", draw_quantiles = T) + geom_jitter(shape=16, position=position_jitter(0.1)) + ylim(-1,1) + theme_minimal() + 
+  ylab("Average Z-score") +
+  ggtitle("GSE10846") + scale_x_discrete(limits=c("low","high"))
+
+# + geom_boxplot(width=0.05, color="red", outlier.alpha = 0)
+g
+dev.off()
+```
+```{r}
+wilcox.test(avg_Zscore ~ `APOBEC3G Category`,plot_data)
+```
+
+
+
+```{r}
+colnames(e)
+```
+
+
+```{r}
+#png(file="C:/Users/csislyn/Desktop/box.png")
+boxplot(MS4A1 ~ combine, data=m, xlab="Sex (0=female, 1=male_A3G)", ylab="CD20 expression")
+#dev.off()
+```
+
+```{r}
+a3g_low  <- m %>% dplyr::filter(A3Gm == 1) %>% subset(select=c("MS4A1")) %>% as.vector()
+a3g_high <- m %>% dplyr::filter(A3Gm == 2) %>% subset(select=c("MS4A1")) %>% as.vector()
+```
+
+
+```{r}
+wilcox.test(MS4A1 ~ A3Gm, data=m)
+```
+
+```{r}
+sub <- m %>% filter(A3Gm == 3)
+sub
+```
+
+```{r}
+wilcox.test(MS4A1 ~ Sex.0..female.1..male, data=sub)
+```
+```{r}
+png("C:/Users/csislyn/Desktop/Asia_5G_.png", res=400)
+g <- ggplot(m, aes(x=combine, y=MS4A1, group=combine)) + geom_violin(trim=F) + geom_jitter(shape=16, position=position_jitter(0.1)) +
+  geom_boxplot(width=0.1, color="red", outlier.alpha = 0) +
+  ylim(-4,4)
+g
+dev.off()
+```
+```{r}
+m$A3Gm
+```
+
+
+```{r}
+write.table(m, "C:/Users/csislyn/Desktop/mdata.csv", sep=",", quote=F, row.names = F)
+```
+
+## Sex and APOBEC3G, average Z-score by gene
+```{r}
+# 0_1
+low_F <- e[ e$Gene %in% sub0_1[[1]], colnames(e) %in% c("Gene",CRPs$Genes) ]
+low_F <- as_tibble(t(low_F), rownames = "Gene")
+colnames(low_F) <- low_F[c(1),]
+low_F <- low_F[-c(1), ]
+low_F[] <- lapply(low_F, as.numeric)
+low_F <- low_F %>% mutate("avg_Zscore"=rowMeans(low_F[, colnames(low_F) %in% sub0_1[[1]]]))
+low_F['Category'] <- "Female::A3G Q1"
+# 0_4
+high_F <- e[ e$Gene %in% sub0_4[[1]], colnames(e) %in% c("Gene",CRPs$Genes) ]
+high_F <- as_tibble(t(high_F), rownames = "Gene")
+colnames(high_F) <- high_F[c(1),]
+high_F <- high_F[-c(1), ]
+high_F[] <- lapply(high_F, as.numeric)
+high_F <- high_F %>% mutate("avg_Zscore"=rowMeans(high_F[, colnames(high_F) %in% sub0_4[[1]]]))
+high_F['Category'] <- "Female::A3G Q4"
+# 1_1
+low_M <- e[ e$Gene %in% sub1_1[[1]], colnames(e) %in% c("Gene",CRPs$Genes) ]
+low_M <- as_tibble(t(low_M), rownames = "Gene")
+colnames(low_M) <- low_M[c(1),]
+low_M <- low_M[-c(1), ]
+low_M[] <- lapply(low_M, as.numeric)
+low_M <- low_M %>% mutate("avg_Zscore"=rowMeans(low_M[, colnames(low_M) %in% sub1_1[[1]]]))
+low_M['Category'] <- "Male::A3G Q1"
+# 1_4
+high_M <- e[ e$Gene %in% sub1_4[[1]], colnames(e) %in% c("Gene",CRPs$Genes) ]
+high_M <- as_tibble(t(high_M), rownames = "Gene")
+colnames(high_M) <- high_M[c(1),]
+high_M <- high_M[-c(1), ]
+high_M[] <- lapply(high_M, as.numeric)
+high_M <- high_M %>% mutate("avg_Zscore"=rowMeans(high_M[, colnames(high_M) %in% sub1_4[[1]]]))
+high_M['Category'] <- "Male::A3G Q4"
+```
+
+```{r}
+plot_data <- rbind( low_F[, c("avg_Zscore","Category")], high_F[, c("avg_Zscore","Category")], low_M[, c("avg_Zscore","Category")], high_M[, c("avg_Zscore","Category")])
+```
+
+```{r}
+library(Cairo)
+Cairo(file="C:/Users/csislyn/Desktop/apobec_sex_gene-zscore_Lenz.png", dpi=400, width=6, height = 6, units="in")
+g <- ggplot(plot_data, aes(x=Category,y=avg_Zscore, group=Category)) + geom_violin(trim=F,scale = "count", draw_quantiles = T) + geom_jitter(shape=16, position=position_jitter(0.1)) + ylim(-1,1) + theme_minimal() + 
+  ylab("Average Z-score") +
+  ggtitle("GSE10846") + scale_x_discrete(limits=c("Male::A3G Q1", "Male::A3G Q4", "Female::A3G Q1", "Female::A3G Q4"))
+
+# + geom_boxplot(width=0.05, color="red", outlier.alpha = 0)
+g
+dev.off()
+```
+
+```{r}
+plot_data_s <- plot_data[plot_data$Category %in% c("Female::A3G Q1", "Female::A3G Q4"), ]
+wilcox.test(avg_Zscore ~ Category, plot_data_s)
+```
+```{r}
+test <- cor.test(e$APOBEC3G, e$FAU)
+```
+
+```{r}
+e <- e %>% unlist()
+for (gene in c(CRPs$Genes)){
+  print( gene )
+  test <- cor.test(as.numeric(e["APOBEC3G"]),as.numeric(e[gene]))
+}
+```
+
