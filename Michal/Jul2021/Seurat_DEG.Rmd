@@ -1,0 +1,73 @@
+---
+title: "R Notebook"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(dplyr)
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(Cairo)
+library(EnhancedVolcano)
+library(ggrepel)
+library(RColorBrewer)
+
+#Lod annotated data
+annot_rLN <- annot[annot$Sample %in% "rLN1" & annot$Population %in% "HealthyB" | annot$Sample %in% "rLN2" & annot$Population %in% "HealthyB" | annot$Sample %in%  "rLN3" & annot$Population %in% "HealthyB",]
+```
+
+# load data
+```{r}
+dlbc.l1 <- Read10X(data.dir="~/Desktop/dataverse_files/rLN1/")
+l1 <- CreateSeuratObject(counts = dlbc.l1, project = "L1", min.cells = 3, min.features = 200)
+
+dlbc.l2 <- Read10X(data.dir="~/Desktop/dataverse_files/rLN2/")
+l2 <- CreateSeuratObject(counts = dlbc.l2, project = "L2", min.cells = 3, min.features = 200)
+
+dlbc.l3 <- Read10X(data.dir="~/Desktop/dataverse_files/rLN3/")
+l3 <- CreateSeuratObject(counts = dlbc.l3, project = "L3", min.cells = 3, min.features = 200)
+```
+
+# merge Seurat objects
+```{r}
+rLN <- merge(x=l1, y=c(l2,l3), add.cell.ids=c("L1","L2","L3"), merge.data=T, project="LymphNodes")
+rLN
+rLN_filtered <- rLN[,substr(colnames(rLN),4,19) %in% annot_rLN$Barcode]
+rLN_filtered
+```
+
+# assign MYC/BCL2/BCL6 subtypes
+```{r}
+neg_ids   <- WhichCells(rLN, slot="count")
+neg_cells <- subset(rLN, cells=neg_ids)
+neg_cells@meta.data['m26_status'] <- "all"
+
+pos_ids   <- WhichCells(rLN, expression= MYC>0 & BCL2 >0 & BCL6==0, slot="count")
+pos_cells <- subset(rLN,cells=pos_ids)
+pos_cells@meta.data['m26_status'] <- "M+2+6-"
+
+
+# merge into single object
+rLN2 <- merge(x=pos_cells, y=c(neg_cells),add.cell.ids=c("P","N"), merge.data = T, project = "rLymphNode")
+Idents(rLN2) <- rLN2@meta.data$m26_status
+```
+
+# log-normalize and scale
+```{r}
+rLN2 <- NormalizeData(rLN2, normalization.method = "LogNormalize", scale.factor = 10000)
+rLN2 <- ScaleData(rLN2)
+```
+
+# DEG
+```{r}
+DEG.markers <- FindMarkers(rLN2, ident.1 = "M+2+6-", ident.2 = "all")
+```
+
+Save DEG
+```{r}
+write.csv(DEG.markers,"~/Desktop/DEG rLN M+2+6- vs all.csv",quote=F,row.names = T)
+```
