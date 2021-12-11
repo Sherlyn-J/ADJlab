@@ -1,0 +1,51 @@
+---
+title: "porcess TCGA"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+
+df <- read.delim("D:/TCGA/OV/OV_RawCounts.csv", header=T,check.names=F)
+```
+
+
+```{r}
+colnames(df)[1] <- "GENE"
+df
+```
+
+```{r}
+dft <- as.data.frame(t(df))
+colnames(dft) <- dft[c(1),]
+dft <- dft[-c(1),]
+dft
+```
+
+```{r}
+dft['r51q'] <- ntile(dft$RAD51,4)
+
+dft <- dft[dft$r51q==1|dft$r51q==4,]
+rnames <- rownames(dft)
+unique(dft$r51q)
+```
+```{r}
+c("GENE",rnames)
+colnames(df)
+```
+
+```{r}
+df_sub <- subset(df, select=c("GENE",rnames))
+write.table(df_sub, "D:/TCGA/OV/OV_gsea_4vs1.txt", sep="\t",quote=F,row.names = F)
+df_sub
+```
+
+
+```{r}
+cls <- paste0( nrow(dft),"\t",2,"\t",1,"\n#\t", paste(unique(dft$r51q), collapse = "\t"),"\n",paste(dft$r51q, collapse="\t") )
+cls
+write_file(cls, "D:/TCGA/OV/OV_r51_4vs1.cls")
+```
+
