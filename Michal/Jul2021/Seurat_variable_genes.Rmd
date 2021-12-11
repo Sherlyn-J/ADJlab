@@ -1,0 +1,43 @@
+---
+title: "Michal - scRNAseq DLBCL normal B-cells M+2+6-"
+output: html_notebook
+---
+
+# Load data
+```{r}
+library(dplyr)
+library(Seurat)
+library(tidyverse)
+library(patchwork)
+
+pbmc.data <- Read10X(data.dir = "D:/Michal_Jul2021/filtered_gene_bc_matrices/hg19/")
+pbmc      <- CreateSeuratObject(counts = pbmc.data, project = "pbmc3k", min.cells = 3, min.features = 200)
+pbmc
+```
+# QC and plots
+```{r}
+## QC features can be added as columns using [[ ]] operator. Example: % of mitochondrial genes
+pbmc[["percent.mt"]] <- PercentageFeatureSet(pbmc, pattern = "^MT-")
+VlnPlot(pbmc, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+# Remove samples with MT-genes > 5%
+pbmc <- subset(pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+```
+
+# Normalize
+```{r}
+pbmc <- NormalizeData(pbmc, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+
+```{r}
+pbmc <- FindVariableFeatures(pbmc, selection.method = "vst", nfeatures = 100)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(pbmc), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(pbmc)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot1 + plot2
+```
+
