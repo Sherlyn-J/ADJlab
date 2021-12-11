@@ -1,5 +1,6 @@
 ---
 title: "Prepare TCGA expression data for GSEA"
+author: Sherlyn Jemimah, PhD
 output: html_notebook
 ---
 
