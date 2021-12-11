@@ -1,0 +1,149 @@
+---
+title: "R Notebook"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(superheat)
+library(dplyr)
+library(Cairo)
+# import SAMIT
+data <- read.csv("D:/Michal_Jan2021/SAMIT/samitnano.csv")
+
+immune2 <- c("ADORA2A", "BLK", "BTLA",  "CCR4",  "CD209", "CD244", "CD27", "CD28", "CD3G", "CD4", "CD40LG", "CD44",   "CD84",  "CD8B", "CGAS", "CTLA4", "CTSW", "DDX58", "DPP4",  "EOMES", "FCGR3A", "FOXP3", "GNLY", "GZMA", "GZMB", "GZMH", "HAVCR2", "HLADMB", "HLADOB",  "HLADRA", "HSD11B1", "ICOS", "IDO1", "IL12RB2", "IL15", "IL18R1", "IL21R",  "KLRK1", "LAG3", "MS4A1", "MS4A2", "NCR1", "PDCD1", "PDCD1LG2", "PRF1", "PTPRC",  "S100A12", "SH2D1A",  "STAT4",  "TIGIT",  "TLR8",  "TNFRSF17", "TNFRSF9", "TPSAB1",   "XCL2")
+
+immune <- c("ADORA2A", "BLK", "BTLA", "CCL13", "CCR4", "CD163", "CD19", "CD209", "CD244", "CD27", "CD274", "CD28", "CD3D", "CD3E", "CD3G", "CD4", "CD40LG", "CD44", "CD6", "CD68", "CD84", "CD8A", "CD8B", "CGAS", "CSF3R", "CTLA4", "CTSW", "DDX58", "DPP4", "ENTPD1", "EOMES", "FCGR3A", "FOXP3", "GNLY", "GZMA", "GZMB", "GZMH", "HAVCR2", "HLADMA", "HLADMB", "HLADOB", "HLADQB1", "HLADRA", "HSD11B1", "ICOS", "IDO1", "IL10", "IL12RB2", "IL15", "IL17A", "IL18R1", "IL21R", "IL7R", "KIR3DL1", "KLRB1", "KLRD1", "KLRK1", "LAG3", "MS4A1", "MS4A2", "NCR1", "NT5E", "PDCD1", "PDCD1LG2", "PRF1", "PTPRC", "PVR", "S100A12", "SH2D1A", "STAT1", "STAT4", "TBX21", "TIGIT", "TLR7", "TLR8", "TLR9", "TMEM173", "TNFRSF17", "TNFRSF4", "TNFRSF9", "TPSAB1", "VEGFA", "VSIR", "XCL2")
+
+subdeg <- c('BLK', 'CD19', 'CD27', 'CD274', 'CD28', 'CD3D', 'CD3E', 'CD6', 'CGAS', 'DDX58', 'ENTPD1', 'EOMES', 'FCGR3A', 'GNLY', 'GZMB', 'HAVCR2', 'HLADMB', 'HLADOB', 'IDO1', 'IL12RB2', 'IL18R1', 'IL7R', 'KLRB1', 'MS4A1', 'MS4A2', 'PDCD1LG2', 'S100A12', 'STAT1', 'TLR9', 'TMEM173', 'TNFRSF17', 'TNFRSF9', 'TPSAB1', 'VSIR')
+
+set.seed(7)
+# PLA2G7 quartiles: transpose, add column, filter 1+4, transpose
+annot <- data$Annotation
+
+data <- subset( data, select=-c(Annotation))
+temp <- as.data.frame(t(data))
+colnames(temp) <- temp[c(1),]
+temp <- temp[-c(1),]
+temp['plaq'] <- ntile(temp$RAD51,4)
+temp <- temp[ , colnames(temp) %in% c(subdeg,"RAD51","plaq") ] #temp$plaq==1 | temp$plaq==4
+labels <- colnames(temp)[1:length(colnames(temp))-1]
+
+supermat <- apply( as.matrix(temp), 2, as.numeric )
+
+Cairo("D:/Michal_Jan2021/SAMIT/samit_RAD51_Q4vsQ1_sub.png", width=40, height=24, units="in", dpi=400)
+hmap <- superheat( supermat[2:nrow(supermat), 2:ncol(supermat)-1],
+                   scale= F,
+                   membership.rows = temp$plaq[2:length(rownames(temp))],
+                   pretty.order.cols = T,
+                   force.bottom.label = T,
+                   bottom.label.text.angle = 90,
+                   bottom.label.size=0.1,
+                   bottom.label.text.size = 9,
+                   left.label.size = 0.1,
+                   smoothing.method = "loess",
+                   smooth.heat = F,
+                  )
+print(hmap)
+dev.off()
+```
+
+```{r}
+library(cluster)
+library(dendextend)
+library(factoextra)
+library(tidyverse)
+
+# import SAMIT
+data <- read.csv("D:/Michal_Jan2021/SAMIT/samit_edit_27jul21.csv")
+
+# PLA2G7 quartiles: transpose, add column, filter 1+4, transpose
+annot <- data$Annotation
+
+data <- subset( data, select=-c(Annotation))
+temp <- as.data.frame(t(data))
+colnames(temp) <- temp[c(1),]
+temp <- temp[-c(1),]
+temp['plaq'] <- ntile(temp$PLA2G7,4)
+temp <- temp[ temp$plaq==1, ]
+labels <- colnames(temp)[1:length(colnames(temp))-1]
+
+supermat <- apply( as.matrix(temp), 2, as.numeric )
+
+fviz_nbclust(supermat[,-2],kmeans,method = "wss")
+
+cobj <- clusGap(supermat[,-2], FUN = kmeans, nstart = 25, K.max = 10, B = 20)
+
+fviz_gap_stat(
+  cobj,
+  linecolor = "steelblue",
+  maxSE = list(method = "firstSEmax", SE.factor = 1)
+)
+```
+
+```{r}
+#make this example reproducible
+set.seed(7)
+
+#perform k-means clustering with k clusters
+km <- kmeans(supermat[,-1], centers = 3, nstart = 2)
+
+#view results
+km
+
+fviz_cluster(km, data = supermat[,-1], scale=T)
+```
+```{r}
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+library(RColorBrewer)
+library(EnhancedVolcano)
+
+#raw count matrix
+cts <- read.table("D:/Michal_Jan2021/SAMIT/samit_edit_28jul21.csv",header=TRUE,sep=",",check.names = F, row.names = 1)
+cts <- subset( cts, select=-c(DESCRIPTION))
+temp <- as.data.frame(t(cts))
+temp['plaq'] <- ntile(temp$PLA2G7,4)
+temp <- temp[ temp$plaq==1|temp$plaq==4, ]
+#temp <- rownames_to_column(temp, "sample")
+
+#sample information
+coldata <- subset(temp, select=c("plaq")) %>% 
+  rownames_to_column(var="sample")
+
+#remove plaq column
+temp <- subset(temp, select=-c(plaq))
+t1 <- temp[ temp$plaq==1, ]
+t4 <- temp[ temp$plaq==4, ]
+temp <- as.data.frame(t(temp))
+
+#initialize DESeq obj
+
+res <- data.frame("gene"=character(),"logFC"=numeric(),"pvalue"=numeric())
+
+
+
+# write.table(res, "D:/Michal_Jan2021/SAMIT/DEG-pla2g7-Q4vsQ1.csv",sep=",",quote=F)
+# pdf(file="D:/Michal_Jan2021/SAMIT/volcano-pla2g7-Q4vsQ1.pdf", 
+#          width=9, height=9)
+# EnhancedVolcano(res, 
+#                 lab=rownames(res), 
+#                 x='log2FoldChange',
+#                 y='pvalue',
+#                 title='PLA2G7: Q4 vs Q1',
+#                 subtitle='')
+# dev.off()
+
+
+```
+
+# SAMIT DESeq
+```{r}
+
+```
+
