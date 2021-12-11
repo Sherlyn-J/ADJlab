@@ -1,0 +1,200 @@
+---
+title: "Seurat New Notes"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(Cairo)
+library(ggrepel)
+
+dlbc.d1 <- Read10X(data.dir="D:/Michal-Asia/raw/DLBCL1/")
+d1 <- CreateSeuratObject(counts = dlbc.d1, project = "D1", min.cells = 3, min.features = 200)
+d1@meta.data[['batch']] <- 1
+d1@meta.data[['sex']] <- 1
+
+dlbc.d2 <- Read10X(data.dir="D:/Michal-Asia/raw/DLBCL2/")
+d2 <- CreateSeuratObject(counts = dlbc.d2, project = "D2", min.cells = 3, min.features = 200)
+d2@meta.data[['batch']] <- 1
+d2@meta.data[['sex']] <- 0
+
+dlbc.d3 <- Read10X(data.dir="D:/Michal-Asia/raw/DLBCL3/")
+d3 <- CreateSeuratObject(counts = dlbc.d3, project = "D3", min.cells = 3, min.features = 200)
+d3@meta.data[['batch']] <- 2
+d3@meta.data[['sex']] <- 1
+
+dlbc.l1 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN1/")
+l1 <- CreateSeuratObject(counts = dlbc.l1, project = "L1", min.cells = 3, min.features = 200)
+l1@meta.data[['batch']] <- 1
+l1@meta.data[['sex']] <- 0
+
+dlbc.l2 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN2/")
+l2 <- CreateSeuratObject(counts = dlbc.l2, project = "L2", min.cells = 3, min.features = 200)
+l2@meta.data[['batch']] <- 2
+l2@meta.data[['sex']] <- 0
+
+dlbc.l3 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN3/")
+l3 <- CreateSeuratObject(counts = dlbc.l3, project = "L3", min.cells = 3, min.features = 200)
+l3@meta.data[['batch']] <- 2
+l3@meta.data[['sex']] <- 1
+
+dlbc.f1 <- Read10X(data.dir="D:/Michal-Asia/raw/FL1/")
+f1 <- CreateSeuratObject(counts = dlbc.f1, project = "F1", min.cells = 3, min.features = 200)
+f1@meta.data[['batch']] <- 1
+f1@meta.data[['sex']] <- 0
+
+dlbc.f2 <- Read10X(data.dir="D:/Michal-Asia/raw/FL2/")
+f2 <- CreateSeuratObject(counts = dlbc.f2, project = "F2", min.cells = 3, min.features = 200)
+f2@meta.data[['batch']] <- 1
+f2@meta.data[['sex']] <- 0
+
+dlbc.f3 <- Read10X(data.dir="D:/Michal-Asia/raw/FL3/")
+f3 <- CreateSeuratObject(counts = dlbc.f3, project = "F3", min.cells = 3, min.features = 200)
+f3@meta.data[['batch']] <- 1
+f3@meta.data[['sex']] <- 0
+
+dlbc.f4 <- Read10X(data.dir="D:/Michal-Asia/raw/FL4/")
+f4 <- CreateSeuratObject(counts = dlbc.f4, project = "F4", min.cells = 3, min.features = 200)
+f4@meta.data[['batch']] <- 2
+f4@meta.data[['sex']] <- 0
+
+# batch 1 normalization
+b1 <- merge(f1, y=f2, add.cell.ids = c("F1","F2"), project = "batch1")
+b1 <- merge(b1, y=f3, add.cell.ids = c( "" ,"F3"), project = "batch1")
+b1 <- merge(b1, y=d1, add.cell.ids = c( "" ,"D1"), project = "batch1")
+b1 <- merge(b1, y=d2, add.cell.ids = c( "" ,"D2"), project = "batch1")
+b1 <- merge(b1, y=l1, add.cell.ids = c( "" ,"L1"), project = "batch1")
+
+# batch 2 normalization
+b2 <- merge(d3, y=f4, add.cell.ids = c("D3","F4"), project = "batch2")
+b2 <- merge(b2, y=l2, add.cell.ids = c( "" ,"L2"), project = "batch2")
+b2 <- merge(b2, y=l3, add.cell.ids = c( "" ,"L3"), project = "batch2")
+
+# female DLBC merge
+fem_dlbc <- merge(d1, y=d3, add.cell.ids = c("D1","D3"), project = "female-DLBC")
+
+# female only
+fem_only <- merge(d1, y=d3, add.cell.ids = c("D1","D3"), project = "female-only")
+fem_only <- merge(fem_only, y=l3, add.cell.ids = c("","L3"), project = "female-only")
+
+# male only
+male_only <- merge(d2, y=l1, add.cell.ids = c("D2","L1"), project = "male-only")
+male_only <- merge(male_only, y=l2, add.cell.ids = c("","L2"), project = "male-only")
+
+dlbc <- merge(b1,y=b2,add.cell.ids = c("B1","B2"), project = "DLBC" )
+
+# QC
+dlbc[["percent.mt"]] <- PercentageFeatureSet(dlbc, pattern = "^MT-")
+dlbc <- subset(dlbc, subset = nFeature_RNA > 200 & percent.mt < 5)
+dlbc <- NormalizeData(dlbc)
+
+a3g <- GetAssayData(object = dlbc, assay = "RNA", slot = "data")["APOBEC3G",]
+cd20 <- GetAssayData(object = dlbc, assay = "RNA", slot = "data")["MS4A1",]
+dlbc@meta.data['A3G'] <- a3g
+dlbc@meta.data['CD20'] <- cd20
+
+genbarcode <- function(st){ # from rownames in metadata only
+  tmp <- tail(strsplit(x=st,split="_")[[1]],1)
+  tmp <- head(strsplit(x=tmp,split="-")[[1]],1)
+  return(tmp)
+}
+
+annot <- read.table("D:/Michal-Asia/AnnotationCells.csv", sep=",", header=T)
+dlbc@meta.data$Barcode <- mapply(genbarcode,row.names(dlbc@meta.data))
+dlbc@meta.data <- merge(dlbc@meta.data,annot,by=c("orig.ident","Barcode"))
+```
+```{r}
+myc  <- GetAssayData(object = dlbc, assay = "RNA", slot = "data")["MYC", ]
+bcl2 <- GetAssayData(object = dlbc, assay = "RNA", slot = "data")["BCL2",]
+bcl6 <- GetAssayData(object = dlbc, assay = "RNA", slot = "data")["BCL6",]
+
+```
+
+```{r}
+levels(dlbc)
+head(dlbc@meta.data,10)
+```
+```{r}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+
+Idents(dlbc) <- dlbc@meta.data$Population
+features <- c("MYC","BCL2","BCL6")
+RidgePlot(dlbc, features = features, ncol = 2)
+```
+```{r}
+VlnPlot(dlbc, features = features)
+```
+```{r}
+DotPlot(dlbc, features = features) + RotatedAxis()
+```
+```{r}
+DoHeatmap(subset(dlbc, downsample = 100), features = features, size = 3)
+```
+
+
+```{r}
+genes <- c("MYC","BCL2","BCL6")
+expr  <- GetAssayData(object=dlbc,assay="RNA",slot="data")[genes,]
+```
+
+# Test Sankey plots
+```{r}
+# Library
+library(networkD3)
+library(dplyr)
+library(datasets)
+
+# A connection data frame is a list of flows with intensity for each flow
+links <- datasets::HairEyeColor %>%  as_tibble()
+ 
+# From these flows we need to create a node data frame: it lists every entities involved in the flow
+nodes <- data.frame(
+  name=c(as.character(links$Sex),
+         as.character(links$Hair),
+         as.character(links$Eye)) %>% unique()
+)
+ 
+# Make the Network
+p <- sankeyNetwork(Links = links, Nodes = nodes,
+              Source = c("Sex","Hair"), Target = "Eye",
+              Value = "n", NodeID = "name", 
+              sinksRight=FALSE)
+p
+
+# save the widget
+library(htmlwidgets)
+saveWidget(p, file="C:/Users/csislyn/Desktop/sankeyBasic1.html")
+```
+```{r}
+# Library
+library(networkD3)
+library(dplyr)
+library(datasets)
+
+# A connection data frame is a list of flows with intensity for each flow
+links <- dlbc@meta.data
+ 
+# From these flows we need to create a node data frame: it lists every entities involved in the flow
+nodes <- data.frame(
+  name=c(as.character(links$Sex),
+         as.character(links$Hair),
+         as.character(links$Eye)) %>% unique()
+)
+ 
+# Make the Network
+p <- sankeyNetwork(Links = links, Nodes = nodes,
+              Source = c("Sex","Hair"), Target = "Eye",
+              Value = "n", NodeID = "name", 
+              sinksRight=FALSE)
+p
+
+# save the widget
+library(htmlwidgets)
+saveWidget(p, file="C:/Users/csislyn/Desktop/sankeyBasic1.html")
+```
