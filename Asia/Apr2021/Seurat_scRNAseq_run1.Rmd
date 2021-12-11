@@ -1,0 +1,234 @@
+---
+title: "DLBC scRNA-seq"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+```
+
+
+```{r}
+# Load the dlbc dataset
+dlbc.d1 <- Read10X(data.dir="D:/Michal-Asia/raw/DLBCL1/")
+d1 <- CreateSeuratObject(counts = dlbc.d1, project = "D1-F", min.cells = 3, min.features = 200)
+dlbc.d2 <- Read10X(data.dir="D:/Michal-Asia/raw/DLBCL2/")
+d2 <- CreateSeuratObject(counts = dlbc.d2, project = "D2-M", min.cells = 3, min.features = 200)
+# dlbc.d3 <- Read10X(data.dir="D:/Michal-Asia/raw/DLBCL3/")
+# d3 <- CreateSeuratObject(counts = dlbc.d3, project = "D3-F", min.cells = 3, min.features = 200)
+dlbc.l1 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN1/")
+l1 <- CreateSeuratObject(counts = dlbc.l1, project = "L1-M", min.cells = 3, min.features = 200)
+dlbc.l2 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN2/")
+l2 <- CreateSeuratObject(counts = dlbc.l2, project = "L2-M", min.cells = 3, min.features = 200)
+dlbc.l3 <- Read10X(data.dir="D:/Michal-Asia/raw/rLN3/")
+l3 <- CreateSeuratObject(counts = dlbc.l3, project = "L3-F", min.cells = 3, min.features = 200)
+dlbc.f1 <- Read10X(data.dir="D:/Michal-Asia/raw/FL1/")
+f1 <- CreateSeuratObject(counts = dlbc.f1, project = "F1-M", min.cells = 3, min.features = 200)
+dlbc.f2 <- Read10X(data.dir="D:/Michal-Asia/raw/FL2/")
+f2 <- CreateSeuratObject(counts = dlbc.f2, project = "F2-M", min.cells = 3, min.features = 200)
+dlbc.f3 <- Read10X(data.dir="D:/Michal-Asia/raw/FL3/")
+f3 <- CreateSeuratObject(counts = dlbc.f3, project = "F3-M", min.cells = 3, min.features = 200)
+dlbc.f4 <- Read10X(data.dir="D:/Michal-Asia/raw/FL4/")
+f4 <- CreateSeuratObject(counts = dlbc.f4, project = "F4-M", min.cells = 3, min.features = 200)
+
+# merge datasets
+x1 <- merge(d1, y = d2, add.cell.ids = c("D1", "D2"), project = "combined1")
+# x1 <- merge(x1, y = d3, add.cell.ids = c(""  , "D3"), project = "combined1")
+x1 <- merge(x1, y = l1, add.cell.ids = c(""  , "L1"), project = "combined1")
+x1 <- merge(x1, y = l2, add.cell.ids = c(""  , "L2"), project = "combined1")
+x1 <- merge(x1, y = l3, add.cell.ids = c(""  , "L3"), project = "combined1")
+x1 <- merge(x1, y = f1, add.cell.ids = c(""  , "F1"), project = "combined1")
+x1 <- merge(x1, y = f2, add.cell.ids = c(""  , "F2"), project = "combined1")
+x1 <- merge(x1, y = f3, add.cell.ids = c(""  , "F3"), project = "combined1")
+dlbc <- merge(x1, y = f4, add.cell.ids = c(""  , "F4"), project = "combined1")
+```
+
+
+```{r}
+dlbc[["percent.mt"]] <- PercentageFeatureSet(dlbc, pattern = "^MT-")
+```
+
+```{r}
+# Visualize QC metrics as a violin plot
+VlnPlot(dlbc, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+Possible reasons for high MT-genes% in D3:
+1) High rate of apoptosis in sample
+2) non-GCB sample
+3) sample preparation artefacts
+
+(D1,D2,F1-F3,L1) vs. (D3,F4,L2,L3)
+Different batches, different versions of Cellranger (2.1.1 vs 3.0.2): should we split this analysis? Normalize batch 1 vs. batch2??
+
+```{r}
+# FeatureScatter is typically used to visualize feature-feature relationships, but can be used
+# for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+
+plot1 <- FeatureScatter(dlbc, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(dlbc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+
+dlbc <- subset(dlbc, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+```
+
+```{r}
+# normalization
+dlbc <- NormalizeData(dlbc, normalization.method = "RC", scale.factor = 10000)
+dlbc <- NormalizeData(dlbc)
+```
+
+```{r}
+dlbc <- FindVariableFeatures(dlbc, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(dlbc), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(dlbc)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+# check individual genes expression
+VlnPlot(dlbc, features = c("MS4A1", "APOBEC3G","PAX5"))
+plot2
+```
+```{r}
+FeatureScatter(d2, feature1 = "APOBEC3G", feature2 = "MS4A1")
+```
+
+
+```{r}
+plot5 <- FeatureScatter(dlbc, feature1 = "MS4A1", feature2 = "APOBEC3G")
+plot5
+
+plot6 <- FeatureScatter(dlbc, feature1 = "IL17A", feature2 = "APOBEC3G")
+plot6
+```
+
+
+```{r}
+dlbc <- ScaleData(dlbc)
+dlbc <- RunPCA(dlbc, features = VariableFeatures(object = dlbc))
+
+# Examine and visualize PCA results a few different ways
+print(dlbc[["pca"]], dims = 1:5, nfeatures = 5)
+```
+
+```{r}
+VizDimLoadings(dlbc, dims = 1:3, reduction = "pca")
+```
+
+```{r}
+DimPlot(dlbc, reduction = "pca")
+```
+
+```{r}
+plot <- DimHeatmap(dlbc, dims = 1, cells = 500, balanced = TRUE)
+
+CairoPNG(file="D:/Michal-Asia/pca_dim1.png",
+      units="in", 
+      width=10, 
+      height=12,
+      pointsize=8, 
+      dpi=300)
+print(plot)
+dev.off()
+
+```
+
+```{r}
+plot <- DimHeatmap(dlbc, dims = 1:6, cells = 500, balanced = TRUE)
+
+```
+
+```{r}
+# NOTE: This process can take a long time for big datasets, comment out for expediency. More
+# approximate techniques such as those implemented in ElbowPlot() can be used to reduce
+# computation time
+# dlbc <- JackStraw(dlbc, num.replicate = 100)
+# dlbc <- ScoreJackStraw(dlbc, dims = 1:20)
+# 
+# JackStrawPlot(dlbc, dims = 1:15)
+```
+
+```{r}
+ElbowPlot(dlbc)
+```
+
+```{r}
+dlbc <- FindNeighbors(dlbc, dims = 1:10)
+dlbc <- FindClusters(dlbc, resolution = 0.5)
+# Look at cluster IDs of the first 5 cells
+head(Idents(dlbc), 5)
+```
+
+```{r}
+# If you haven't installed UMAP, you can do so via reticulate::py_install(packages =
+# 'umap-learn')
+dlbc <- RunUMAP(dlbc, dims = 1:8)
+plot4 <- DimPlot(dlbc, reduction = "umap",label=TRUE)
+
+library(Cairo)
+CairoPNG(file="D:/Michal-Asia/UMAP.png",
+      units="in", 
+      width=10, 
+      height=7,
+      pointsize=8, 
+      dpi=300)
+print(plot4)
+dev.off()
+
+```
+
+```{r}
+# find markers for every cluster compared to all remaining cells, report only the positive ones
+dlbc.markers <- FindAllMarkers(dlbc, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+dlbc.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+cluster1.markers <- FindMarkers(dlbc, ident.1 = 0, logfc.threshold = 0.25, test.use = "roc", only.pos = TRUE)
+```
+
+```{r}
+cluster1.markers <- FindMarkers(dlbc, ident.1 = 0, logfc.threshold = 0.25, test.use = "roc", only.pos = TRUE)
+```
+```{r}
+VlnPlot(dlbc, features = c("MS4A1", "APOBEC3G"))
+```
+```{r}
+plot5 <- FeaturePlot(dlbc, features = c("IL7R","CD4","PLAC8","KLF2","GZMK","CCL5","GZMA","NKG7","CCL4","BCL6","BCL2","CXCR4","CD38","CD19","CD83","BCL6","APOBEC3G","APOBEC3F","MS4A1"))
+CairoPNG(file="D:/Michal-Asia/clusters-featuremap.png",
+      units="in", 
+      width=40, 
+      height=30,
+      pointsize=8, 
+      dpi=300)
+print(plot5)
+dev.off()
+```
+
+```{r}
+top10 <- dlbc.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+plot3 <- DoHeatmap(dlbc, features = top10$gene) + NoLegend()
+
+CairoPNG(file="D:/Michal-Asia/clusters-hmap.png",
+      units="in", 
+      width=45, 
+      height=30,
+      pointsize=8, 
+      dpi=300)
+print(plot3)
+dev.off()
+
+```
+
+
+```{r}
+A3G = GetAssayData(object = d1, assay = "RNA", slot = "data")["APOBEC3G",]
+pos_ids = names(which(A3G>0))
+neg_ids = names(which(A3G==0))
+pos_cells = subset(d1,cells=pos_ids)
+neg_cells = subset(d1,cells=neg_ids)
+FindMarkers(object = d1, ident.1 = pos_cells, ident.2 = neg_cells)
+```
+
