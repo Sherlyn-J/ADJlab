@@ -1,0 +1,133 @@
+---
+title: "Allison: reverse volcano plots"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+# Load data and initialize DESeq object
+```{r}
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+library(RColorBrewer)
+library(EnhancedVolcano)
+
+#combined raw count matrix for all 4 cell lines
+cts <- as.matrix(read.table("D:/Allison_Jan2021/raw_counts.csv",header=TRUE,sep=",",row.names="Gene"))
+#sample information
+coldata <- as.matrix(read.table("D:/Allison_Jan2021/coldata.txt",header=TRUE,sep="\t",row.names=1))
+
+#initialize DESeq obj
+dds <- DESeqDataSetFromMatrix(countData = cts, 
+                              colData   = coldata, 
+                              design    = ~ Treatment)
+dds$Treatment <- relevel(dds$Treatment, ref = "G")
+dds <- DESeq(dds)
+res <- results(dds, name="Treatment_Z_vs_G")
+write.table(res, "Z:/Allison/DESeq2_updated/ZvsG.csv",sep=",",quote=F)
+pdf(file="Z:/Allison/DESeq2_updated/ATRi-vs-GEM.pdf", 
+         width=9, height=9)
+EnhancedVolcano(res, 
+                lab=rownames(res), 
+                x='log2FoldChange',
+                y='pvalue',
+                title='ATRi vs. Gemcitabine',
+                subtitle='')
+dev.off()
+```
+```{r}
+# Gem vs. Ctrl
+res <- results(dds, name="Treatment_G_vs_C")
+pdf(file="D:/Allison_Jan2021/GEM-vs-CTRL.pdf", 
+         width=9, height=9)
+EnhancedVolcano(res, 
+                lab=rownames(res), 
+                x='log2FoldChange', 
+                y='pvalue',
+                title='Gemcitabine vs. Control',
+                subtitle='')
+dev.off()
+```
+```{r}
+# ATRi vs. Ctrl
+res <- results(dds, name="Treatment_Z_vs_C")
+pdf(file="D:/Allison_Jan2021/ATRi-vs-CTRL.png", 
+         width=9, height=9)
+EnhancedVolcano(res, 
+                lab=rownames(res), 
+                x='log2FoldChange', 
+                y='pvalue',
+                title='ATRi vs. Control',
+                subtitle='')
+dev.off()
+
+# ATRi-GEM vs. Ctrl
+res <- results(dds, name="Treatment_ZG_vs_C")
+pdf(file="D:/Allison_Jan2021/ATRi-GEM-vs-CTRL.png", 
+         width=9, height=9)
+EnhancedVolcano(res, 
+                lab=rownames(res), 
+                x='log2FoldChange', 
+                y='pvalue',
+                title='Gemcitabine+ATRi vs. Control',
+                subtitle='')
+
+dev.off()
+```
+
+```{r}
+# ATRi-GEM vs. GEM
+#initialize DESeq obj
+dds <- DESeqDataSetFromMatrix(countData = cts, 
+                              colData   = coldata, 
+                              design    = ~ Treatment)
+dds$Treatment <- relevel(dds$Treatment, ref = "G")
+dds <- DESeq(dds)
+res <- results(dds, name="Treatment_ZG_vs_G")
+pdf(file="D:/Allison_Jan2021/ATRi-GEM-vs-GEM.png", 
+         width=9, height=9)
+EnhancedVolcano(res, 
+                lab=rownames(res), 
+                x='log2FoldChange', 
+                y='pvalue',
+                title='Gemcitabine+ATRi vs. Gemcitabine',
+                subtitle='')
+
+dev.off()
+```
+
+# pathways
+```{r}
+library(ggplot2)
+library(pheatmap)
+library(RColorBrewer)
+library(EnhancedVolcano)
+
+data <- read.table("D:/Allison_Jan2021/ATRGEM-vs-CTRL/pathwaysES.txt", sep="\t", check.names = F, header = T)
+
+pdf(file="D:/Allison_Jan2021/ATRGEM-vs-CTRL_pathways.pdf", 
+         width=9, height=9)
+EnhancedVolcano(data, 
+                lab=data$NAME, 
+                x='NES', 
+                y='LOG10(pval)',
+                xlab = 'Normalized ES',
+                ylab = bquote(~-Log[10]~ 'NOM p-value'),
+                pCutoff = 1e-1,
+                FCcutoff = 0.7,
+                title='Gemcitabine-ATRi vs. Control',
+                labCol = 'black',
+                boxedLabels = TRUE,
+                colAlpha = 4/5,
+                legendPosition = 'right',
+                legendLabSize = 8,
+                legendIconSize = 4,
+                drawConnectors = TRUE,
+                widthConnectors = 0.5,
+                colConnectors = 'black',
+                labSize = 2,
+                subtitle='') +
+  coord_cartesian(ylim=c(0, 4))
+
+dev.off()
+```
