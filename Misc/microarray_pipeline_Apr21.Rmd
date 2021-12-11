@@ -1,0 +1,186 @@
+---
+title: "Microarray Pipeline"
+output: html_notebook
+---
+
+### Inputs required
+
+1. GEO Accession ID
+2. Phenotype file (list of samples and descriptors)
+```{r}
+library(GEOquery)
+library(dplyr)
+library(limma)
+library(RColorBrewer)
+library(affy)
+library(tibble)
+
+# input GEO ID
+my.gse <- "GSE31312"
+# set working directory
+wd <- "D:/microarray/"
+setwd(wd)
+```
+
+Load file into memory
+```{r}
+if(!file.exists("geo_downloads")) dir.create("geo_downloads")
+if(!file.exists("results"))  dir.create("results", recursive=TRUE)
+my.geo.gse <- getGEO(GEO=my.gse, filename=NULL, destdir="geo_downloads", GSElimits=NULL, GSEMatrix=TRUE, AnnotGPL=TRUE, getGPL=TRUE)
+##get rid of list structure
+my.geo.gse <- my.geo.gse[[1]]
+```
+
+Optional: The following chunk enables you to check the microarray data structure. If you have already performed this step in previous iterations, you can skip this.
+```{r}
+class(my.geo.gse)
+names(my.geo.gse)
+length(my.geo.gse)
+##object is an ExpressionSet
+class(my.geo.gse)
+##you can see the structure of the object
+str(my.geo.gse)
+colnames(pData(my.geo.gse))
+pData(my.geo.gse)$data_processing[1]
+head(exprs(my.geo.gse))
+summary(exprs(my.geo.gse))
+```
+
+Get file list
+```{r}
+if(!file.exists(paste0("./geo_downloads/",my.gse)))
+getGEOSuppFiles(my.gse, makeDirectory=T, baseDir="geo_downloads")
+list.files(paste0("geo_downloads/",my.gse))
+```
+
+Decompress the files.
+```{r}
+untar(paste0("geo_downloads/",my.gse,"/",my.gse,"_RAW.tar"), exdir=paste0("geo_downloads/",my.gse,"/CEL"))
+list.files(paste0("geo_downloads/",my.gse,"/CEL"))
+```
+
+```{r}
+my.cels <- list.files(paste0("geo_downloads/",my.gse,"/CEL"), pattern=".cel", ignore.case = T)
+my.cels <- sort(my.cels)
+```
+
+### Process phenodata
+```{r}
+##make data frame of phenoData
+my.pdata <- as.data.frame(pData(my.geo.gse), stringsAsFactors=F)
+head(my.pdata)
+```
+
+For GSE31312
+```{r}
+# DLBC_class
+my.pdata$characteristics_ch1 <- substring(my.pdata$characteristics_ch1, 37) # remove "gene expression profiling subgroup: "
+my.pdata <- rename(my.pdata, DLBC_Class=characteristics_ch1)
+# Treatment
+my.pdata$treatment_protocol_ch1 <- substring(my.pdata$treatment_protocol_ch1, 128) # 
+my.pdata <- rename(my.pdata, Treatment=treatment_protocol_ch1)
+my.pdata$Treatment <- gsub(').', '', my.pdata$Treatment)
+```
+
+For GSE10846
+```{r}
+# gender
+my.pdata$characteristics_ch1 <- substring(my.pdata$characteristics_ch1, 9) # remove "Gender: " from string
+my.pdata <- rename(my.pdata, Gender=characteristics_ch1)
+# age
+my.pdata$characteristics_ch1.1 <- substring(my.pdata$characteristics_ch1.1, 6) # remove "Age: " from string
+my.pdata <- rename(my.pdata, Age=characteristics_ch1.1)
+# DLBC_class
+my.pdata$characteristics_ch1.6 <- substring(my.pdata$characteristics_ch1.6, 44) # remove "Clinical info: Final microarray diagnosis: "
+my.pdata <- rename(my.pdata, DLBC_Class=characteristics_ch1.6)
+my.pdata$DLBC_Class <- gsub(' DLBCL', '', my.pdata$DLBC_Class)
+# status
+my.pdata$characteristics_ch1.7 <- substring(my.pdata$characteristics_ch1.7, 34) # remove "Clinical info: Follow up status: "
+my.pdata <- rename(my.pdata, Status=characteristics_ch1.7)
+# status
+my.pdata$characteristics_ch1.8 <- substring(my.pdata$characteristics_ch1.8, 33) # remove "Clinical info: Follow up years: "
+my.pdata <- rename(my.pdata, Follow_up_years=characteristics_ch1.8)
+my.pdata$Follow_up_years <- as.numeric(my.pdata$Follow_up_years)
+# Treatment
+my.pdata$characteristics_ch1.9 <- substring(my.pdata$characteristics_ch1.9, 30) # remove "Clinical info: Chemotherapy: "
+my.pdata <- rename(my.pdata, Treatment=characteristics_ch1.9)
+my.pdata$Treatment <- gsub('-Like Regimen', '', my.pdata$Treatment)
+# ECOG
+my.pdata$characteristics_ch1.10 <- substring(my.pdata$characteristics_ch1.10, 41) # remove "Clinical info: ECOG performance status: "
+my.pdata <- rename(my.pdata, ECOG=characteristics_ch1.10)
+# Stage
+my.pdata$characteristics_ch1.11 <- substring(my.pdata$characteristics_ch1.11, 23) # remove "Clinical info: Stage: " from string
+my.pdata <- rename(my.pdata, Stage=characteristics_ch1.11)
+```
+
+Remove unnecessary columns and match with CEL file names: GSE10846
+```{r}
+dim(my.pdata)
+colnames(my.pdata)
+head(my.pdata[, c("Gender", "Age", "DLBC_Class", "Follow_up_years", "Status", "Treatment", "ECOG", "Stage")], 10)
+my.pdata <- my.pdata[, c("Gender", "Age", "DLBC_Class", "Follow_up_years", "Status", "Treatment", "ECOG", "Stage")]
+my.pdata <- my.pdata[order(rownames(my.pdata)), ]
+head(my.pdata, 10)
+```
+
+Remove unnecessary columns and match with CEL file names: GSE31312
+```{r}
+dim(my.pdata)
+colnames(my.pdata)
+head(my.pdata[, c("DLBC_Class", "Treatment")], 10)
+my.pdata <- my.pdata[, c("DLBC_Class", "Treatment")]
+my.pdata <- my.pdata[order(rownames(my.pdata)), ]
+head(my.pdata, 10)
+```
+
+```{r}
+##the rownames of the data frame must be the same as the CEL file names.
+##For this data, we need to do a bit of tinkering.
+head(my.cels)
+my.pdata <- paste(rownames(my.pdata), ".CEL.gz", sep="")
+my.pdata %>% 
+  rownames_to_column(data=my.pdata,var="sample") %>%
+  dplyr::filter(sample %in% my.cels) %>%
+  column_to_rownames(data=my.pdata,var="sample")
+temp.rownames <- rownames(my.pdata)
+rownames(my.pdata) == my.cels
+table(temp.rownames == my.cels)
+rownames(my.pdata) <- temp.rownames
+# rownames(my.pdata) <- gsub("GSM361244.cel.gz","GSM361244.CEL.gz",rownames(my.pdata))
+# rownames(my.pdata) <- gsub("GSM361243.cel.gz","GSM361243.CEL.gz",rownames(my.pdata))
+# rownames(my.pdata) <- gsub("GSM361242.cel.gz","GSM361242.CEL.gz",rownames(my.pdata))
+# rownames(my.pdata) <- gsub("GSM361241.cel.gz","GSM361241.CEL.gz",rownames(my.pdata))
+# rownames(my.pdata) <- gsub("GSM361240.cel.gz","GSM361240.CEL.gz",rownames(my.pdata))
+# rownames(my.pdata) <- gsub("GSM361239.cel.gz","GSM361239.CEL.gz",rownames(my.pdata))
+rm(temp.rownames)
+table(rownames(my.pdata) == my.cels)
+
+```
+
+Write tables
+```{r}
+write.table(my.pdata, file=paste0("geo_downloads/",my.gse,"/CEL/",my.gse,"_SelectPhenoData.txt"), sep="\t", quote=F)
+```
+
+
+Get raw counts
+```{r}
+cel.path <- paste0("geo_downloads/",my.gse,"/CEL")
+my.affy <- ReadAffy(celfile.path=cel.path, phenoData=paste(cel.path, paste0(my.gse,"_SelectPhenoData.txt"), sep="/"))
+show(my.affy)
+head(exprs(my.affy))
+dim(exprs(my.affy))
+colnames(pData(my.affy))
+pData(my.affy)
+pData(my.affy)$title
+```
+
+```{r}
+my.rma <- rma(my.affy, normalize=F, background=F)
+plotDensity(exprs(my.rma))
+```
+
+```{r}
+boxplot(exprs(my.affy), las=2, outline=F, main="Arrays Not Normalized")
+```
+
