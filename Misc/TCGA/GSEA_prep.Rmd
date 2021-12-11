@@ -1,0 +1,66 @@
+---
+title: "Prepare TCGA expression data for GSEA"
+output: html_notebook
+---
+
+#Import data
+```{r}
+library(tidyverse)
+library(dplyr)
+
+cohort <- "STAD"
+gene   <- "RAD51"
+nsplit <- 4
+df <- read.delim(paste0("D:/TCGA/",cohort,"/",cohort,"_RawCounts.csv"), header=T,check.names=F)
+```
+
+```{r}
+colnames(df)[1] <- "GENE"
+df
+```
+
+
+# Transpose a copy
+```{r}
+dft <- as.data.frame(t(df))
+colnames(dft) <- dft[c(1),]
+dft <- dft[-c(1),]
+dft
+```
+
+# Split specific gene by quartile/median
+```{r}
+dft['r51q'] <- ntile(dft[gene],4)
+```
+
+# Filter quartiles 1 and 4 (optional)
+```{r}
+dft <- dft[dft$r51q==1|dft$r51q==4,]
+rnames <- rownames(dft)
+unique(dft$r51q)
+df_sub <- subset(df, select=c("GENE",rnames))
+```
+
+# Insert DESCRIPTION column
+```{r}
+library(tibble)
+df_sub <- add_column(df_sub, DESCRIPTION="na", .after = 1)
+```
+
+```{r}
+df_sub
+```
+
+
+# Write file 
+```{r}
+write.table(df_sub, paste0("D:/TCGA/",cohort,"/",cohort,"_gsea_4vs1.txt"), sep="\t",quote=F,row.names = F)
+```
+
+# Write CLS
+```{r}
+cls <- paste0( nrow(dft),"\t",2,"\t",1,"\n#\t", paste(unique(dft$r51q), collapse = "\t"),"\n",paste(dft$r51q, collapse="\t") )
+cls
+write_file(cls, paste0("D:/TCGA/",cohort,"/",cohort,"_4vs1.cls") )
+```
+
