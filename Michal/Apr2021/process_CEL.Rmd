@@ -1,0 +1,281 @@
+---
+title: "STING raw counts data"
+author: Sherlyn Jemimah, PhD
+output: html_notebook
+---
+
+## Load data using GEOquery
+```{r}
+library(GEOquery)
+my.gse <- "GSE10846"
+setwd(paste0("D:/Michal_Jan2021/STING-TIMER/",my.gse))
+##get published data and metadata
+##this step is slow because of download and reformatting
+##create directory for files downloaded from GEO
+if(!file.exists("geo_downloads")) dir.create("geo_downloads")
+if(!file.exists("results"))  dir.create("results", recursive=TRUE)
+##get data from GEO
+my.geo.gse <- getGEO(GEO=my.gse, filename=NULL, destdir="./geo_downloads", GSElimits=NULL, GSEMatrix=TRUE, AnnotGPL=TRUE, getGPL=TRUE)
+##explore structure of data
+```
+
+Check the object
+```{r}
+# class(my.geo.gse)
+# names(my.geo.gse)
+length(my.geo.gse)
+```
+```{r}
+##get rid of list structure
+my.geo.gse <- my.geo.gse[[1]]
+##object is now an ExpressionSet
+class(my.geo.gse)
+##you can see the structure of the object
+str(my.geo.gse)
+```
+```{r}
+colnames(pData(my.geo.gse))
+pData(my.geo.gse)$data_processing[1]
+head(exprs(my.geo.gse))
+summary(exprs(my.geo.gse))
+```
+```{r}
+if(!file.exists(paste0("./geo_downloads/",my.gse)))
+getGEOSuppFiles(my.gse, makeDirectory=T, baseDir="geo_downloads")
+list.files(paste0("geo_downloads/",my.gse))
+#file.list <- read.delim(paste0("D:/Michal_Jan2021/STING-TIMER/geo_downloads/",my.gse,"/filelist.txt"), as.is=T)
+#file.list
+```
+
+
+```{r}
+untar(paste0("geo_downloads/",my.gse,"/",my.gse,"_RAW.tar"), exdir=paste0("geo_downloads/",my.gse,"/CEL"))
+list.files(paste0("geo_downloads/",my.gse,"/CEL"))
+my.cels <- list.files(paste0("geo_downloads/",my.gse,"/CEL"), pattern=".cel", ignore.case = T)
+my.cels <- sort(my.cels)
+```
+
+## Process the data
+
+```{r}
+library(dplyr)
+##make data frame of phenoData
+my.pdata <- as.data.frame(pData(my.geo.gse), stringsAsFactors=F)
+head(my.pdata)
+
+## Uncomment for GSE10846
+
+# gender
+my.pdata$characteristics_ch1 <- substring(my.pdata$characteristics_ch1, 9) # remove "Gender: " from string
+my.pdata <- rename(my.pdata, Gender=characteristics_ch1)
+
+# age
+my.pdata$characteristics_ch1.1 <- substring(my.pdata$characteristics_ch1.1, 6) # remove "Age: " from string
+my.pdata <- rename(my.pdata, Age=characteristics_ch1.1)
+
+# DLBC_class
+my.pdata$characteristics_ch1.6 <- substring(my.pdata$characteristics_ch1.6, 44) # remove "Clinical info: Final microarray diagnosis: " from string
+my.pdata <- rename(my.pdata, DLBC_Class=characteristics_ch1.6)
+my.pdata$DLBC_Class <- gsub(' DLBCL', '', my.pdata$DLBC_Class)
+
+# status
+my.pdata$characteristics_ch1.7 <- substring(my.pdata$characteristics_ch1.7, 34) # remove "Clinical info: Follow up status: " from string
+my.pdata <- rename(my.pdata, Status=characteristics_ch1.7)
+
+# status
+my.pdata$characteristics_ch1.8 <- substring(my.pdata$characteristics_ch1.8, 33) # remove "Clinical info: Follow up years: " from string
+my.pdata <- rename(my.pdata, Follow_up_years=characteristics_ch1.8)
+my.pdata$Follow_up_years <- as.numeric(my.pdata$Follow_up_years)
+
+# Treatment
+my.pdata$characteristics_ch1.9 <- substring(my.pdata$characteristics_ch1.9, 30) # remove "Clinical info: Chemotherapy: " from string
+my.pdata <- rename(my.pdata, Treatment=characteristics_ch1.9)
+my.pdata$Treatment <- gsub('-Like Regimen', '', my.pdata$Treatment)
+
+# ECOG
+my.pdata$characteristics_ch1.10 <- substring(my.pdata$characteristics_ch1.10, 41) # remove "Clinical info: ECOG performance status: " from string
+my.pdata <- rename(my.pdata, ECOG=characteristics_ch1.10)
+
+# Stage
+my.pdata$characteristics_ch1.11 <- substring(my.pdata$characteristics_ch1.11, 23) # remove "Clinical info: Stage: " from string
+my.pdata <- rename(my.pdata, Stage=characteristics_ch1.11)
+
+```
+
+```{r}
+##unnecessary columns included
+dim(my.pdata)
+colnames(my.pdata)
+head(my.pdata[, c("Gender", "Age", "DLBC_Class", "Follow_up_years", "Status", "Treatment", "ECOG", "Stage")], 10)
+my.pdata <- my.pdata[, c("Gender", "Age", "DLBC_Class", "Follow_up_years", "Status", "Treatment", "ECOG", "Stage")]
+my.pdata <- my.pdata[order(rownames(my.pdata)), ]
+head(my.pdata, 10)
+```
+```{r}
+##the rownames of the data frame must be the same as the CEL file names.
+##For this data, we need to do a bit of tinkering.
+rownames(my.pdata) == my.cels
+```
+
+```{r}
+head(my.cels)
+temp.rownames <- paste(rownames(my.pdata), ".cel.gz", sep="")
+```
+
+
+```{r}
+table(temp.rownames == my.cels)
+rownames(my.pdata) <- temp.rownames
+rownames(my.pdata) <- gsub("GSM361244.cel.gz","GSM361244.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361243.cel.gz","GSM361243.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361242.cel.gz","GSM361242.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361241.cel.gz","GSM361241.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361240.cel.gz","GSM361240.CEL.gz",rownames(my.pdata))
+rownames(my.pdata) <- gsub("GSM361239.cel.gz","GSM361239.CEL.gz",rownames(my.pdata))
+rm(temp.rownames)
+table(rownames(my.pdata) == my.cels)
+```
+```{r}
+write.table(my.pdata, file=paste0("geo_downloads/",my.gse,"/CEL/",my.gse,"_SelectPhenoData.txt"), sep="\t", quote=F)
+```
+
+```{r}
+##Perform affy normalization
+library(affy)
+cel.path <- paste0("geo_downloads/",my.gse,"/CEL")
+my.affy <- ReadAffy(celfile.path=cel.path, phenoData=paste(cel.path, paste0(my.gse,"_SelectPhenoData.txt"), sep="/"))
+show(my.affy)
+```
+```{r}
+head(exprs(my.affy))
+dim(exprs(my.affy))
+colnames(pData(my.affy))
+pData(my.affy)
+pData(my.affy)$title
+```
+```{r}
+##create shorter descriptive levels and labels
+pData(my.affy)$sample.levels <- pData(my.affy)$ECOG
+pData(my.affy)$sample.labels <- pData(my.affy)$Treatment
+pData(my.affy)$Metadata <- paste0(substr(toupper(pData(my.affy)$Gender),1,1),pData(my.affy)$Age,"_",substr(toupper(pData(my.affy)$DLBC_Class),1,3),"_",pData(my.affy)$Treatment)
+
+# table(pData(my.affy)$sample.levels)
+# table(pData(my.affy)$description, pData(my.affy)$sample.levels)
+# table(pData(my.affy)$description, pData(my.affy)$sample.labels)
+```
+
+```{r}
+colnames(pData(my.affy))
+pData(my.affy)
+##quick visual comparison of pData
+cbind(as.character(pData(my.affy)$Gender), pData(my.affy)$DLBC_Class, pData(my.affy)$Treatment, pData(my.affy)$Metadata)
+```
+## Calculating gene expression measurements
+
+```{r}
+##Calculate gene level expression measures
+my.rma <- rma(my.affy, normalize=F, background=F)
+head(exprs(my.rma))
+dim(exprs(my.rma))
+dim(exprs(my.affy))
+pData(my.rma)
+```
+
+```{r}
+##make sample.levels a factor making C.06 the reference.
+pData(my.rma)$sample.levels <- as.factor(pData(my.rma)$sample.levels)
+# pData(my.rma)$sample.levels <- relevel(pData(my.rma)$sample.levels, ref=0)
+# levels(pData(my.rma)$Gender)
+plotDensity(exprs(my.rma))
+```
+
+```{r}
+##Load limma to get plotDensities function. Load RColorBrewer to provide good
+##color palettes.
+library(limma)
+library(RColorBrewer)
+##show palettes available with RColorBrewer
+display.brewer.all()
+level.pal <- brewer.pal(6, "Dark2")
+level.pal
+##sample.levels is a factor. unname will change this to integer data
+##to easily assign colors to the various levels.
+level.cols <- level.pal[unname(pData(my.rma)$sample.levels)]
+level.cols
+##Density plot of rma values show need for normalization
+plotDensities(exprs(my.rma), legend=F, col=level.cols, main="Arrays Not Normalized")
+# legend("topright", legend=levels(as.factor(pData(my.rma)$Metadata)), fill=level.pal)
+```
+
+```{r}
+#pdf(file="results/DensityNoNorm.pdf", w=6, h=6)
+plotDensities(exprs(my.rma), legend=F, col=level.cols, main="Arrays Not Normalized")
+legend("topright", legend=levels(as.factor(pData(my.rma)$sample.levels)), fill=level.pal)
+#dev.off()
+
+##Boxplot is another way of showing the same thing.
+boxplot(exprs(my.rma), las=2, names=pData(my.rma)$sample.labels, outline=F, col=level.cols, main="Arrays Not Normalized")
+```
+
+```{r}
+pdf(file="results/DensityNoNorm_GSE10846.pdf", w=44, h=8)
+boxplot(exprs(my.rma), las=2, names=paste0(pData(my.rma)$sample.labels,"_",pData(my.rma)$sample.levels), outline=F, col=level.cols, main="Arrays Not Normalized")
+dev.off()
+
+##Now use normalization and background correction
+my.rma <- rma(my.affy, normalize=T, background=T)
+plotDensities(exprs(my.rma), legend=F, main="Arrays Normalized")
+```
+
+```{r}
+pdf(file="results/DensityNorm_GSE10846.pdf", w=6, h=6)
+plotDensities(exprs(my.rma), legend=F, col=level.cols, main="Arrays Normalized")
+dev.off()
+boxplot(exprs(my.rma), las=2, names=pData(my.rma)$sample.labels, outline=F, col=level.cols, main="Arrays Normalized")
+```
+
+```{r}
+pdf(file="results/DensityNorm_GSE10846.pdf", w=44, h=8)
+boxplot(exprs(my.rma), las=2, names=paste0(pData(my.rma)$sample.labels,"_",pData(my.rma)$sample.levels), outline=F, col=level.cols, main="Arrays Normalized")
+dev.off()
+##save rma values
+write.table(exprs(my.rma), file=paste0("results/",my.gse,"_RMA_Norm.txt"), sep="\t", quote=FALSE)
+```
+## Filter data
+
+```{r}
+my.calls <- mas5calls(my.affy)
+head(exprs(my.calls))
+table(exprs(my.calls)[, 1])
+##the next expression will work down the rows of the data matrix and 
+##return the number of samples in which the gene has been called as present.
+present <- apply(exprs(my.calls), 1, function(x)(sum(x == "P")))
+head(present)
+table(present)
+prop.table(table(present)) * 100
+table(present >= 4)
+```
+
+```{r}
+##We are going to discard more than half of the genes on the array.
+plotDensities(exprs(my.rma)[present >= 4, ], col=level.cols, legend=F, main="Present >= 4")
+plotDensities(exprs(my.rma)[present < 4, ], col=level.cols, legend=F, main="Present < 4")
+```
+
+```{r}
+##Clean data
+dim(my.rma)
+##remove probesets for genes that are not expressed
+exprs(my.rma) <- exprs(my.rma)[present >= 4, ]
+dim(my.rma)
+##remove probesets that can crosshybridize with other genes
+exprs(my.rma) <- exprs(my.rma)[-grep("_x_", rownames(exprs(my.rma))), ]
+dim(my.rma)
+##remove probesets that are Affymetrix controls
+exprs(my.rma) <- exprs(my.rma)[-grep("AFFX", rownames(exprs(my.rma))), ]
+dim(my.rma)
+pData(my.rma)$sample.levels <- as.factor(pData(my.rma)$sample.levels)
+# pData(my.rma)$sample.levels <- relevel(pData(my.rma)$sample.levels, ref="C.06")
+write.table(exprs(my.rma), file=paste0("results/",my.gse,"_RMA_Norm_Filter.txt"), sep="\t", quote=FALSE)
+```
+
