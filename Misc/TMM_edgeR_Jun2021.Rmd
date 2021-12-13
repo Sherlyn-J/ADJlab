@@ -1,0 +1,61 @@
+---
+title: "EdgeR branch"
+output: html_notebook
+---
+
+## Load data and libraries
+```{r}
+library(dplyr)
+library(tidyr)
+library(plyr)
+
+df <- read.delim("E:/TCGA/OV/OV_RawCounts.csv", check.names = F) 
+names(df)[1] <- "Gene"
+df <- ddply(df,"Gene",numcolwise(sum))
+
+# List of homologous recombination (HR) genes
+HR_genes <- c("ATM", "BACH1", "BARD1", "BLM", "BRCA1", "BRCA2", "CTCF", "CTIP", "DNA2", "EID3", "EME1", "EME2", "GEN1", "H2AFX", "HELQ", "HFM1", "KAT5", "MRE11A", "MUS81", "NBN", "NDNL2", "NFATC2IP", "NSMCE1", "NSMCE2", "NSMCE4A", "PALB2", "PARG", "PAXIP1", "POLD1", "POLD2", "POLD3", "POLD4", "PPP4C", "PPP4R1", "PPP4R2", "PPP4R4", "RAD50", "RAD51", "RAD51B", "RAD51C", "RAD51D", "RAD52", "RAD54B", "RAD54L", "RDM1", "RECQL", "RECQL5", "RMI1", "RPA1", "RPA2", "RPA3", "RPA4", "SHFM1", "SLX1A", "SLX4", "SMC5", "SMC6", "SPO11", "SSBP1", "TOP3A", "TOP3B", "TOPBP1", "UIMC1", "WRN", "XRCC2", "XRCC3")
+```
+
+## Do edgeR TMM
+```{r}
+library(edgeR)
+df <- df[ !duplicated(df$Gene), ]
+row.names(df) <- df$Gene
+df <- df[,!(names(df) %in% c("Gene"))]
+y <- DGEList(counts=as.matrix(df))
+keep <- filterByExpr(y)
+y <- calcNormFactors(y)
+```
+
+## Plot heat map of HR genes
+```{r}
+library(superheat)
+set.seed(7)
+supermat <- y@.Data[[1]]
+supermat <- t(supermat[rownames(supermat) %in% HR_genes, ])
+png("E:/FS-paper/plots/HR-genes-snapshot-OV-noscaling.png", units = "in",
+      width = 12, height = 16, res = 600)
+hmap <- superheat(supermat,
+          scale = F,
+          pretty.order.rows = T,
+          pretty.order.cols = T,
+          heat.col.scheme = "viridis",
+          bottom.label.text.size = 3.6,
+          bottom.label.text.alignment = "left",
+          bottom.label.text.angle = 90,
+          bottom.label.size = 0.07,
+          left.label.size = 0.5,
+          left.label.text.size = 5,
+          left.label.text.alignment = "left",
+          #membership.rows = main_temp2$Type,
+          #yr = main_temp2$segment_count,
+          #yr.axis.name = "Segment \ncount",
+          #yr.plot.type = "bar",
+          #yr.bar.col = 0.1,
+          #bottom.label = main_temp2$Type)
+          #left.label = HR_genes
+          )
+print(hmap)
+dev.off()
+```
